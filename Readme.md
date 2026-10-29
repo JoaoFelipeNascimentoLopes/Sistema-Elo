@@ -1,1 +1,1 @@
-# Sistema Elo - Sistema de Gerenciamento de Casas de Apoio/Acolhimento
+# Sistema Elo - Sistema de Gerenciamento de Casas de Acolhimento

@@ -1,0 +1,19 @@
+CREATE TABLE IF NOT EXISTS tbInformacoesInstituicao (
+    idInformacoes TINYINT UNSIGNED NOT NULL,
+    cnpj VARCHAR(14) NULL,
+    razaoSocial VARCHAR(150) NULL,
+    nomeFantasia VARCHAR(150) NULL,
+    email VARCHAR(190) NULL,
+    telefone VARCHAR(30) NULL,
+    cep VARCHAR(8) NULL,
+    logradouro VARCHAR(150) NULL,
+    numero VARCHAR(20) NULL,
+    complemento VARCHAR(100) NULL,
+    bairro VARCHAR(100) NULL,
+    cidade VARCHAR(100) NULL,
+    uf CHAR(2) NULL,
+    site VARCHAR(255) NULL,
+    criadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (idInformacoes)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

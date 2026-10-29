@@ -14,6 +14,36 @@ function appStartSession(): void
     session_start();
 }
 
+function appCurrentTabToken(): ?string
+{
+    $token = $_POST['tabToken'] ?? $_GET['tabToken'] ?? $_SERVER['HTTP_X_TAB_SESSION'] ?? null;
+    if (!is_string($token) || !preg_match('/^[a-f0-9]{32}$/', $token)) {
+        return null;
+    }
+
+    return $token;
+}
+
+function appTabLoginUrl(): string
+{
+    return appTabUrl(appBaseUrl() . '/auth/login.php');
+}
+
+function appTabUrl(string $url): string
+{
+    $token = appCurrentTabToken();
+    if ($token === null) {
+        return $url;
+    }
+
+    $fragmentPosition = strpos($url, '#');
+    $fragment = $fragmentPosition === false ? '' : substr($url, $fragmentPosition);
+    $urlWithoutFragment = $fragmentPosition === false ? $url : substr($url, 0, $fragmentPosition);
+    $separator = str_contains($urlWithoutFragment, '?') ? '&' : '?';
+
+    return $urlWithoutFragment . $separator . 'tabToken=' . rawurlencode($token) . $fragment;
+}
+
 function appPdo(): PDO
 {
     static $connection;
@@ -71,12 +101,18 @@ function appPageCatalog(): array
         'atendimento/dashboard-atendimento.php' => 'Dashboard de Atendimento',
         'financeiro/dashboard-financeiro.php' => 'Dashboard Financeiro',
         'financeiro/cadastros/categoria-lancamentos.php' => 'Categorias de Lançamentos',
+        'financeiro/cadastros/fonte-recurso.php' => 'Fontes de Recursos',
+        'financeiro/relatorios/categoria-lancamentos.php' => 'Categorias de Lançamentos',
+        'financeiro/relatorios/fontes-recurso.php' => 'Fontes de Recursos',
         'geral/dashboard-geral.php' => 'Dashboard Geral',
         'geral/cadastros/usuarios.php' => 'Usuários',
         'geral/cadastros/perfis-acesso.php' => 'Perfis de Acesso',
+        'geral/relatorios/usuarios-por-perfis.php' => 'Usuários por Perfis',
+        'gestao-acolhidos/dashboard-gestao-acolhidos.php' => 'Dashboard Gestão de Acolhidos',
     ];
     $legacyPageKeys = [
         'financeiro/cadastros/categoria-lancamentos.php' => 'categoria-lancamentos',
+        'financeiro/cadastros/fonte-recurso.php' => 'fonte-recurso',
         'geral/cadastros/usuarios.php' => 'usuarios',
         'geral/cadastros/perfis-acesso.php' => 'perfis-acesso',
     ];
@@ -119,9 +155,50 @@ function appPageCatalog(): array
             $pageLabel = $pageNames["$moduleKey/$relativePath"] ?? null;
             if ($pageLabel === null) {
                 $fileName = pathinfo($relativePath, PATHINFO_FILENAME);
-                $pageLabel = $fileName === 'index'
-                    ? "Início - $moduleName"
-                    : ucwords(str_replace(['-', '_'], ' ', $fileName));
+                if ($fileName === 'index') {
+                    $pageLabel = "Início - $moduleName";
+                } else {
+                    $localizedWords = [
+                        'usuario' => 'Usuário',
+                        'usuarios' => 'Usuários',
+                        'relatorio' => 'Relatório',
+                        'relatorios' => 'Relatórios',
+                        'movimentacao' => 'Movimentação',
+                        'movimentacoes' => 'Movimentações',
+                        'cadastro' => 'Cadastro',
+                        'cadastros' => 'Cadastros',
+                        'configuracao' => 'Configuração',
+                        'configuracoes' => 'Configurações',
+                        'lancamento' => 'Lançamento',
+                        'lancamentos' => 'Lançamentos',
+                        'categoria' => 'Categoria',
+                        'categorias' => 'Categorias',
+                        'gestao' => 'Gestão',
+                        'acolhido' => 'Acolhido',
+                        'acolhidos' => 'Acolhidos',
+                        'beneficiario' => 'Beneficiário',
+                        'beneficiarios' => 'Beneficiários',
+                        'saida' => 'Saída',
+                        'saidas' => 'Saídas',
+                        'entrada' => 'Entrada',
+                        'entradas' => 'Entradas',
+                        'movimento' => 'Movimento',
+                        'movimentos' => 'Movimentos',
+                        'por' => 'por',
+                        'de' => 'de',
+                        'da' => 'da',
+                        'do' => 'do',
+                        'em' => 'em',
+                        'e' => 'e',
+                    ];
+                    $words = preg_split('/[-_]+/', $fileName);
+                    $words = array_map(
+                        static fn(string $word): string => $localizedWords[strtolower($word)] ?? ucfirst($word),
+                        $words
+                    );
+                    $pageLabel = implode(' ', $words);
+                    $pageLabel = ucfirst($pageLabel);
+                }
             }
 
             $catalog[$moduleKey]['paginas'][$pageKey] = [
@@ -142,33 +219,40 @@ function appPageCatalog(): array
 function appCurrentUser(bool $refresh = false): ?array
 {
     appStartSession();
-    if (empty($_SESSION['idUsuario'])) {
+    $tabToken = appCurrentTabToken();
+    if ($tabToken === null || empty($_SESSION['tabSessions'][$tabToken]['idUsuario'])) {
         return null;
     }
 
-    if (!$refresh && isset($_SESSION['usuario'])) {
-        return $_SESSION['usuario'];
-    }
-
     $query = appPdo()->prepare(
-        'SELECT u.idUsuario, u.nomeCompleto, u.login, u.ativo, p.idPerfil, p.nomePerfil,
+        'SELECT u.idUsuario, u.nomeCompleto, u.login, u.ativo, u.bloqueado,
+                u.forcarTrocaSenha, u.tempoExpiracaoSessao, p.idPerfil, p.nomePerfil,
                 p.permissoes, p.administradorGlobal
          FROM tbUsuario u
          INNER JOIN tbPerfilAcesso p ON p.idPerfil = u.idPerfil
          WHERE u.idUsuario = :idUsuario
          LIMIT 1'
     );
-    $query->execute(['idUsuario' => (int) $_SESSION['idUsuario']]);
+    $query->execute(['idUsuario' => (int) $_SESSION['tabSessions'][$tabToken]['idUsuario']]);
     $user = $query->fetch();
 
-    if (!$user || !(int) $user['ativo']) {
-        $_SESSION = [];
-        session_destroy();
+    if (!$user || !(int) $user['ativo'] || (int) $user['bloqueado'] === 1) {
+        unset($_SESSION['tabSessions'][$tabToken]);
         return null;
     }
 
+    $now = time();
+    $timeoutSeconds = (int) $user['tempoExpiracaoSessao'] * 60;
+    if ($now - (int) $_SESSION['tabSessions'][$tabToken]['lastActivityAt'] >= $timeoutSeconds) {
+        unset($_SESSION['tabSessions'][$tabToken]);
+        return null;
+    }
+
+    $_SESSION['tabSessions'][$tabToken]['lastActivityAt'] = $now;
+    $_SESSION['tabSessions'][$tabToken]['expiresAt'] = $now + $timeoutSeconds;
     $user['permissoes'] = json_decode($user['permissoes'], true, 512, JSON_THROW_ON_ERROR);
-    $_SESSION['usuario'] = $user;
+    $user['sessionExpiresAt'] = $_SESSION['tabSessions'][$tabToken]['expiresAt'];
+    $user['mustChangePassword'] = (int) $_SESSION['tabSessions'][$tabToken]['mustChangePassword'];
 
     return $user;
 }
@@ -178,6 +262,11 @@ function appCanAccess(string $pageKey, ?array $user = null): bool
     $user = $user ?? appCurrentUser(true);
     if (!$user) {
         return false;
+    }
+
+    if ($pageKey === 'instituicao.informacoes') {
+        return appIsPrimaryAdmin($user)
+            || in_array('informacoes', $user['permissoes']['instituicao'] ?? [], true);
     }
 
     if ($user['login'] === 'admin-global' && $pageKey === 'geral.perfis-acesso') {
@@ -264,33 +353,39 @@ function appVisibleModulePages(string $moduleKey, ?array $user = null): array
     return $pages;
 }
 
+function appPageCategory(string $relativePath): string
+{
+    $fileName = strtolower(pathinfo($relativePath, PATHINFO_FILENAME));
+    if ($fileName === 'dashboard' || str_starts_with($fileName, 'dashboard-')) {
+        return 'dashboards';
+    }
+
+    $directory = strtolower(str_replace('\\', '/', dirname($relativePath)));
+    $directory = str_replace(['á', 'ã', 'â'], 'a', $directory);
+    $directory = str_replace(['ç'], 'c', $directory);
+    $directory = str_replace(['é', 'ê'], 'e', $directory);
+    $directory = str_replace(['í'], 'i', $directory);
+    $directory = str_replace(['ó', 'ô', 'õ'], 'o', $directory);
+    $directory = str_replace(['ú'], 'u', $directory);
+
+    return match (explode('/', $directory)[0]) {
+        'movimentacoes' => 'movimentacoes',
+        'relatorios', 'relatorio' => 'relatorios',
+        default => 'cadastros',
+    };
+}
+
 function appSidebarPageGroups(string $moduleKey, ?array $user = null): array
 {
     $groups = [
+        'dashboards' => ['nome' => 'Dashboards', 'paginas' => []],
         'cadastros' => ['nome' => 'Cadastros', 'paginas' => []],
         'movimentacoes' => ['nome' => 'Movimentações', 'paginas' => []],
         'relatorios' => ['nome' => 'Relatórios', 'paginas' => []],
     ];
 
     foreach (appVisibleModulePages($moduleKey, $user) as $page) {
-        $fileName = strtolower(pathinfo($page['arquivo'], PATHINFO_FILENAME));
-        if ($fileName === 'dashboard' || str_starts_with($fileName, 'dashboard-')) {
-            continue;
-        }
-
-        $directory = strtolower(str_replace('\\', '/', dirname($page['arquivo'])));
-        $directory = str_replace(['á', 'ã', 'â'], 'a', $directory);
-        $directory = str_replace(['ç'], 'c', $directory);
-        $directory = str_replace(['é', 'ê'], 'e', $directory);
-        $directory = str_replace(['í'], 'i', $directory);
-        $directory = str_replace(['ó', 'ô', 'õ'], 'o', $directory);
-        $directory = str_replace(['ú'], 'u', $directory);
-        $firstDirectory = explode('/', $directory)[0];
-        $groupKey = match ($firstDirectory) {
-            'movimentacoes' => 'movimentacoes',
-            'relatorios', 'relatorio' => 'relatorios',
-            default => 'cadastros',
-        };
+        $groupKey = appPageCategory($page['arquivo']);
         $groups[$groupKey]['paginas'][] = $page;
     }
 
@@ -301,9 +396,13 @@ function appRequirePage(string $pageKey): array
 {
     $user = appCurrentUser(true);
     if (!$user) {
-        $loginUrl = appBaseUrl() . '/auth/login.php';
-        header('Location: ' . $loginUrl);
+        header('Location: ' . appTabLoginUrl());
         exit;
+    }
+
+    if ((int) $user['mustChangePassword'] === 1 && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        http_response_code(403);
+        exit('Altere sua senha no modal obrigatório antes de executar esta ação.');
     }
 
     if (!appCanAccess($pageKey, $user)) {
@@ -337,6 +436,31 @@ function appValidateCsrf(): void
 function appEscape(string $value): string
 {
     return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function appPasswordPolicyError(string $password): ?string
+{
+    if (mb_strlen($password, 'UTF-8') < 8) {
+        return 'A senha deve ter pelo menos 8 caracteres.';
+    }
+    if (preg_match('/\p{Lu}/u', $password) !== 1
+        || preg_match('/\p{Ll}/u', $password) !== 1
+        || preg_match('/\p{N}/u', $password) !== 1
+        || preg_match('/[\p{P}\p{S}]/u', $password) !== 1) {
+        return 'A senha deve conter letra maiúscula, letra minúscula, número e caractere especial.';
+    }
+
+    return null;
+}
+
+function appJavascriptVersion(): string
+{
+    $version = filemtime(__DIR__ . '/../assets/js/app.js');
+    if ($version === false) {
+        throw new RuntimeException('Não foi possível determinar a versão dos scripts da interface.');
+    }
+
+    return (string) $version;
 }
 
 appStartSession();

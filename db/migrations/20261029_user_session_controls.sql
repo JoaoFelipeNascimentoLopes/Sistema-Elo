@@ -1,0 +1,4 @@
+ALTER TABLE tbUsuario
+    ADD COLUMN bloqueado TINYINT(1) NOT NULL DEFAULT 0 AFTER ativo,
+    ADD COLUMN forcarTrocaSenha TINYINT(1) NOT NULL DEFAULT 0 AFTER bloqueado,
+    ADD COLUMN tempoExpiracaoSessao SMALLINT UNSIGNED NOT NULL DEFAULT 30 AFTER forcarTrocaSenha;

@@ -8,24 +8,13 @@ appRequirePage('financeiro.dashboard-financeiro');
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema Elo</title>
+    <link rel="icon" type="image/png" href="<?php echo appEscape(appBaseUrl() . '/assets/imgs/logo-elo.png'); ?>">
     
     <!-- Fontes, Tailwind e Ícones -->
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="<?php echo appEscape(appBaseUrl() . '/assets/js/tailwind-config.js'); ?>"></script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Poppins', 'sans-serif'] },
-                    colors: {
-                        'elo-teal': '#007C89',
-                        'elo-green': '#48C0B5',
-                    }
-                }
-            }
-        }
-    </script>
 </head>
 
 <!-- 1. BODY: O h-screen e overflow-hidden travam a página no tamanho exato do monitor -->
@@ -54,5 +43,6 @@ appRequirePage('financeiro.dashboard-financeiro');
         </main>
     </div>
 
+    <script src="<?php echo appEscape(appBaseUrl() . '/assets/js/app.js?v=' . appJavascriptVersion()); ?>"></script>
 </body>
 </html>

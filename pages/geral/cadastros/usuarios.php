@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../../auth/access.php';
 $usuarioAtual = appRequirePage('geral.usuarios');
 $pdo = appPdo();
 $erro = '';
+$formSubmitted = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     appValidateCsrf();
@@ -15,15 +16,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $email = trim((string) ($_POST['email'] ?? ''));
             $login = trim((string) ($_POST['login'] ?? ''));
             $senha = (string) ($_POST['senha'] ?? '');
+            $confirmarSenha = (string) ($_POST['confirmarSenha'] ?? '');
             $idPerfil = filter_var($_POST['idPerfil'] ?? 0, FILTER_VALIDATE_INT);
             $ativo = isset($_POST['ativo']) ? 1 : 0;
+            $bloqueado = isset($_POST['bloqueado']) ? 1 : 0;
+            $forcarTrocaSenha = isset($_POST['forcarTrocaSenha']) ? 1 : 0;
+            $tempoExpiracaoSessao = filter_var($_POST['tempoExpiracaoSessao'] ?? null, FILTER_VALIDATE_INT);
+            $formSubmitted = [
+                'idUsuario' => $idUsuario !== false ? $idUsuario : 0,
+                'nomeCompleto' => $nome,
+                'email' => $email,
+                'login' => $login,
+                'idPerfil' => $idPerfil !== false ? $idPerfil : 0,
+                'ativo' => $ativo,
+                'bloqueado' => $bloqueado,
+                'forcarTrocaSenha' => $forcarTrocaSenha,
+                'tempoExpiracaoSessao' => $tempoExpiracaoSessao !== false ? $tempoExpiracaoSessao : 30,
+            ];
 
-            if ($nome === '' || mb_strlen($nome) > 150 || !filter_var($email, FILTER_VALIDATE_EMAIL)
+            $emailValido = filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+            if (!$emailValido && $idUsuario !== false && $idUsuario > 0) {
+                $storedEmailQuery = $pdo->prepare(
+                    'SELECT email FROM tbUsuario WHERE idUsuario = :idUsuario'
+                );
+                $storedEmailQuery->execute(['idUsuario' => $idUsuario]);
+                $storedEmail = $storedEmailQuery->fetchColumn();
+                $emailValido = is_string($storedEmail) && hash_equals($storedEmail, $email);
+            }
+
+            if ($nome === '' || mb_strlen($nome) > 150 || !$emailValido
                 || mb_strlen($email) > 190 || !preg_match('/^[A-Za-z0-9._-]{3,80}$/', $login)
-                || !$idPerfil || ($idUsuario === false) || $idUsuario < 0
-                || ($idUsuario === 0 && strlen($senha) < 12)
-                || ($senha !== '' && strlen($senha) < 12)) {
-                throw new InvalidArgumentException('Confira os dados. A senha deve ter ao menos 12 caracteres.');
+                || !$idPerfil || ($idUsuario === false) || $idUsuario < 0) {
+                throw new InvalidArgumentException('Confira o nome, e-mail, login e perfil selecionados.');
+            }
+            if ($tempoExpiracaoSessao === false || $tempoExpiracaoSessao < 30 || $tempoExpiracaoSessao > 180) {
+                throw new InvalidArgumentException('O tempo de expiração da sessão deve ficar entre 30 e 180 minutos.');
+            }
+            if ($senha === '' && $idUsuario === 0) {
+                throw new InvalidArgumentException('Informe uma senha para o novo usuário.');
+            }
+            if ($senha !== '' && $senha !== $confirmarSenha) {
+                throw new InvalidArgumentException('A senha e a confirmação não são iguais.');
+            }
+            if ($senha !== '') {
+                $passwordPolicyError = appPasswordPolicyError($senha);
+                if ($passwordPolicyError !== null) {
+                    throw new InvalidArgumentException($passwordPolicyError);
+                }
             }
 
             $profileCheck = $pdo->prepare(
@@ -38,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($idUsuario > 0) {
                 $parameters = [];
                 $existingUser = $pdo->prepare(
-                    'SELECT u.idUsuario, u.login, u.idPerfil, u.ativo, p.administradorGlobal
+                    'SELECT u.idUsuario, u.login, u.idPerfil, u.ativo, u.bloqueado, p.administradorGlobal
                      FROM tbUsuario u INNER JOIN tbPerfilAcesso p ON p.idPerfil = u.idPerfil
                      WHERE u.idUsuario = :idUsuario'
                 );
@@ -52,8 +91,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     || $login !== 'admin-global'
                     || (int) $selectedProfile['administradorGlobal'] !== 1
                     || (int) $selectedProfile['idPerfil'] !== (int) $userToEdit['idPerfil']
-                    || $ativo !== 1)) {
+                    || $ativo !== 1 || $bloqueado !== 0)) {
                     throw new InvalidArgumentException('A conta admin-global e seu perfil não podem ser alterados por esta ação.');
+                }
+                if ($idUsuario === (int) $usuarioAtual['idUsuario'] && $bloqueado === 1) {
+                    throw new InvalidArgumentException('Não é possível bloquear a própria conta.');
                 }
                 if (!$editingPrimaryAdmin && $login === 'admin-global') {
                     throw new InvalidArgumentException('O login admin-global é reservado.');
@@ -66,7 +108,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $statement = $pdo->prepare(
                         'UPDATE tbUsuario
                          SET nomeCompleto = :nome, email = :email, login = :login, senhaHash = :senhaHash,
-                             idPerfil = :idPerfil, ativo = :ativo
+                             idPerfil = :idPerfil, ativo = :ativo, bloqueado = :bloqueado,
+                             forcarTrocaSenha = :forcarTrocaSenha, tempoExpiracaoSessao = :tempoExpiracaoSessao
                          WHERE idUsuario = :idUsuario'
                     );
                     $parameters['senhaHash'] = password_hash($senha, PASSWORD_DEFAULT);
@@ -74,16 +117,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $statement = $pdo->prepare(
                         'UPDATE tbUsuario
                          SET nomeCompleto = :nome, email = :email, login = :login,
-                             idPerfil = :idPerfil, ativo = :ativo
+                             idPerfil = :idPerfil, ativo = :ativo, bloqueado = :bloqueado,
+                             forcarTrocaSenha = :forcarTrocaSenha, tempoExpiracaoSessao = :tempoExpiracaoSessao
                          WHERE idUsuario = :idUsuario'
                     );
                 }
                 $parameters += [
                     'nome' => $nome, 'email' => $email, 'login' => $login,
-                    'idPerfil' => $idPerfil, 'ativo' => $ativo, 'idUsuario' => $idUsuario,
+                    'idPerfil' => $idPerfil, 'ativo' => $ativo, 'bloqueado' => $bloqueado,
+                    'forcarTrocaSenha' => $forcarTrocaSenha,
+                    'tempoExpiracaoSessao' => $tempoExpiracaoSessao,
+                    'idUsuario' => $idUsuario,
                 ];
                 $statement->execute($parameters);
-                header('Location: usuarios.php?resultado=atualizado');
+                header('Location: ' . appTabUrl('usuarios.php?resultado=atualizado'));
                 exit;
             }
             if ($login === 'admin-global' || (int) $selectedProfile['administradorGlobal'] === 1) {
@@ -91,8 +138,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $statement = $pdo->prepare(
-                'INSERT INTO tbUsuario (nomeCompleto, email, login, senhaHash, idPerfil, ativo)
-                 VALUES (:nome, :email, :login, :senhaHash, :idPerfil, :ativo)'
+                'INSERT INTO tbUsuario
+                    (nomeCompleto, email, login, senhaHash, idPerfil, ativo, bloqueado,
+                     forcarTrocaSenha, tempoExpiracaoSessao)
+                 VALUES (:nome, :email, :login, :senhaHash, :idPerfil, :ativo, :bloqueado,
+                         :forcarTrocaSenha, :tempoExpiracaoSessao)'
             );
             $statement->execute([
                 'nome' => $nome,
@@ -101,8 +151,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'senhaHash' => password_hash($senha, PASSWORD_DEFAULT),
                 'idPerfil' => $idPerfil,
                 'ativo' => $ativo,
+                'bloqueado' => $bloqueado,
+                'forcarTrocaSenha' => $forcarTrocaSenha,
+                'tempoExpiracaoSessao' => $tempoExpiracaoSessao,
             ]);
-            header('Location: usuarios.php?resultado=criado');
+            header('Location: ' . appTabUrl('usuarios.php?resultado=criado'));
             exit;
         }
 
@@ -128,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $delete = $pdo->prepare('DELETE FROM tbUsuario WHERE idUsuario = :idUsuario');
             $delete->execute(['idUsuario' => $idUsuario]);
-            header('Location: usuarios.php?resultado=excluido');
+            header('Location: ' . appTabUrl('usuarios.php?resultado=excluido'));
             exit;
         }
 
@@ -148,17 +201,25 @@ $perfis = $pdo->query(
 )->fetchAll();
 $usuarioEdicao = null;
 $idEdicao = filter_input(INPUT_GET, 'editar', FILTER_VALIDATE_INT);
+if ($formSubmitted !== null && (int) $formSubmitted['idUsuario'] > 0) {
+    $idEdicao = (int) $formSubmitted['idUsuario'];
+}
 if ($idEdicao) {
     $statement = $pdo->prepare(
-        'SELECT u.idUsuario, u.nomeCompleto, u.email, u.login, u.idPerfil, u.ativo, p.administradorGlobal
+        'SELECT u.idUsuario, u.nomeCompleto, u.email, u.login, u.idPerfil, u.ativo,
+                u.bloqueado, u.forcarTrocaSenha, u.tempoExpiracaoSessao, p.administradorGlobal
          FROM tbUsuario u INNER JOIN tbPerfilAcesso p ON p.idPerfil = u.idPerfil
          WHERE u.idUsuario = :idUsuario'
     );
     $statement->execute(['idUsuario' => $idEdicao]);
     $usuarioEdicao = $statement->fetch() ?: null;
 }
+if ($formSubmitted !== null) {
+    $usuarioEdicao = array_merge($usuarioEdicao ?? [], $formSubmitted);
+}
 $usuarios = $pdo->query(
-    'SELECT u.idUsuario, u.nomeCompleto, u.email, u.login, u.ativo, p.nomePerfil, p.administradorGlobal
+    'SELECT u.idUsuario, u.nomeCompleto, u.email, u.login, u.ativo, u.bloqueado,
+            p.nomePerfil, p.administradorGlobal
      FROM tbUsuario u INNER JOIN tbPerfilAcesso p ON p.idPerfil = u.idPerfil
      ORDER BY u.nomeCompleto'
 )->fetchAll();
@@ -173,11 +234,13 @@ $resultado = [
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Usuários - Sistema Elo</title>
+    <title>Sistema Elo</title>
+    <link rel="icon" type="image/png" href="<?php echo appEscape(appBaseUrl() . '/assets/imgs/logo-elo.png'); ?>">
     <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script><script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Poppins', 'sans-serif'] }, colors: { 'elo-teal': '#007C89', 'elo-green': '#48C0B5' } } } };</script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="<?php echo appEscape(appBaseUrl() . '/assets/js/tailwind-config.js'); ?>"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
 </head>
 <body class="flex h-screen flex-col overflow-hidden bg-gray-100 font-sans">
     <?php include __DIR__ . '/../../../components/geral/navbar-geral.php'; ?>
@@ -186,47 +249,109 @@ $resultado = [
         <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
             <h1 class="mb-6 text-2xl font-bold text-gray-800">Cadastro de Usuários</h1>
             <?php $abaInicial = ($usuarioEdicao || $erro !== '') ? 'manutencao' : 'pesquisa'; include __DIR__ . '/../../../components/tabs-pesquisa-manutencao.php'; ?>
-            <?php if ($erro !== ''): ?><p role="alert" class="mb-4 rounded bg-red-50 p-3 text-sm text-red-700"><?php echo appEscape($erro); ?></p><?php endif; ?>
-
             <section id="painel-manutencao" role="tabpanel" aria-labelledby="tab-manutencao" class="mb-8 rounded-lg border border-gray-200 bg-white p-5 shadow-sm" <?php echo $abaInicial === 'manutencao' ? '' : 'hidden'; ?>>
                 <h2 class="mb-4 text-lg font-semibold"><?php echo $usuarioEdicao ? 'Alterar usuário' : 'Novo usuário'; ?></h2>
-                <form method="post" onsubmit="return confirm('Confirma gravar estes dados?')" class="grid gap-4 md:grid-cols-2">
+                <form method="post" data-confirm="Confirma gravar estes dados?" data-password-policy-form class="space-y-6">
                     <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
+                    <input type="hidden" name="tabToken" value="<?php echo appEscape((string) appCurrentTabToken()); ?>">
                     <input type="hidden" name="acao" value="salvar">
                     <input type="hidden" name="idUsuario" value="<?php echo (int) ($usuarioEdicao['idUsuario'] ?? 0); ?>">
-                    <label class="text-sm font-medium text-gray-700">Nome completo
-                        <input name="nomeCompleto" required maxlength="150" value="<?php echo appEscape((string) ($usuarioEdicao['nomeCompleto'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">E-mail
-                        <input name="email" type="email" required maxlength="190" value="<?php echo appEscape((string) ($usuarioEdicao['email'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">Login
-                        <input name="login" required minlength="3" maxlength="80" pattern="[A-Za-z0-9._-]+" value="<?php echo appEscape((string) ($usuarioEdicao['login'] ?? '')); ?>" <?php echo ($usuarioEdicao['login'] ?? '') === 'admin-global' ? 'readonly' : ''; ?> class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">Senha <?php echo $usuarioEdicao ? '(deixe vazia para manter)' : '(mínimo 12 caracteres)'; ?>
-                        <input name="senha" type="password" autocomplete="new-password" <?php echo $usuarioEdicao ? '' : 'required'; ?> minlength="12" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">Perfil de acesso
-                        <select name="idPerfil" required class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2">
-                            <option value="">Selecione</option>
-                            <?php foreach ($perfis as $perfil): ?>
-                                <?php if ((int) $perfil['administradorGlobal'] === 1
-                                    && (($usuarioEdicao['login'] ?? '') !== 'admin-global' || !appIsPrimaryAdmin($usuarioAtual))) {
-                                    continue;
-                                } ?>
-                                <option value="<?php echo (int) $perfil['idPerfil']; ?>" <?php echo (int) ($usuarioEdicao['idPerfil'] ?? 0) === (int) $perfil['idPerfil'] ? 'selected' : ''; ?>>
-                                    <?php echo appEscape($perfil['nomePerfil']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </label>
-                    <label class="flex items-center gap-2 self-end pb-2 text-sm text-gray-700">
-                        <input type="checkbox" name="ativo" value="1" <?php echo !$usuarioEdicao || (int) $usuarioEdicao['ativo'] === 1 ? 'checked' : ''; ?>>
-                        Usuário ativo
-                    </label>
-                    <div class="flex gap-2 md:col-span-2">
-                        <button class="rounded bg-elo-teal px-4 py-2 font-medium text-white hover:bg-elo-green"><?php echo $usuarioEdicao ? 'Salvar alterações' : 'Cadastrar usuário'; ?></button>
-                        <?php if ($usuarioEdicao): ?><a href="usuarios.php#pesquisa" class="rounded border px-4 py-2 text-gray-700 hover:bg-gray-50">Cancelar</a><?php endif; ?>
+                    <section class="rounded-lg border border-gray-200 p-4">
+                        <div class="mb-4">
+                            <h3 class="font-semibold text-gray-800">Dados Pessoais</h3>
+                            <p class="text-sm text-gray-500">Informações de identificação e contato do usuário.</p>
+                        </div>
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <label class="text-sm font-medium text-gray-700">Nome Completo
+                                <input name="nomeCompleto" required maxlength="150" value="<?php echo appEscape((string) ($usuarioEdicao['nomeCompleto'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">E-mail
+                                <input name="email" type="email" required maxlength="190" value="<?php echo appEscape((string) ($usuarioEdicao['email'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            </label>
+                        </div>
+                    </section>
+
+                    <section class="rounded-lg border border-gray-200 p-4">
+                        <div class="mb-4">
+                            <h3 class="font-semibold text-gray-800">Credenciais de Acesso</h3>
+                            <p class="text-sm text-gray-500">Login e senha utilizados para entrar no sistema.</p>
+                        </div>
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <label class="text-sm font-medium text-gray-700">Login
+                                <input name="login" required minlength="3" maxlength="80" pattern="[A-Za-z0-9._-]+" value="<?php echo appEscape((string) ($usuarioEdicao['login'] ?? '')); ?>" <?php echo ($usuarioEdicao['login'] ?? '') === 'admin-global' ? 'readonly' : ''; ?> class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            </label>
+                            <div class="hidden md:block"></div>
+                            <label class="text-sm font-medium text-gray-700">Nova Senha
+                                <input name="senha" type="password" autocomplete="new-password" data-password-policy-input <?php echo $usuarioEdicao ? '' : 'required'; ?> minlength="8" aria-describedby="senha-ajuda" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">Confirmar Nova Senha
+                                <input name="confirmarSenha" type="password" autocomplete="new-password" data-password-confirm-input <?php echo $usuarioEdicao ? '' : 'required'; ?> minlength="8" aria-describedby="senha-ajuda" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            </label>
+                            <p id="senha-ajuda" class="text-xs text-gray-500 md:col-span-2">
+                                <?php echo $usuarioEdicao
+                                    ? 'Para manter a senha atual, deixe Nova Senha em branco. Ao alterá-la, use pelo menos 8 caracteres, com maiúscula, minúscula, número e caractere especial, e confirme ao lado.'
+                                    : 'Use pelo menos 8 caracteres, com maiúscula, minúscula, número e caractere especial. Repita a senha no campo de confirmação.'; ?>
+                            </p>
+                        </div>
+                    </section>
+
+                    <section class="rounded-lg border border-gray-200 p-4">
+                        <div class="mb-4">
+                            <h3 class="font-semibold text-gray-800">Acesso e Sessão</h3>
+                            <p class="text-sm text-gray-500">Defina o perfil, o status e as regras de segurança da conta.</p>
+                        </div>
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <label class="text-sm font-medium text-gray-700">Perfil de Acesso
+                                <select name="idPerfil" required class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2">
+                                    <option value="">Selecione</option>
+                                    <?php foreach ($perfis as $perfil): ?>
+                                        <?php if ((int) $perfil['administradorGlobal'] === 1
+                                            && (($usuarioEdicao['login'] ?? '') !== 'admin-global' || !appIsPrimaryAdmin($usuarioAtual))) {
+                                            continue;
+                                        } ?>
+                                        <option value="<?php echo (int) $perfil['idPerfil']; ?>" <?php echo (int) ($usuarioEdicao['idPerfil'] ?? 0) === (int) $perfil['idPerfil'] ? 'selected' : ''; ?>>
+                                            <?php echo appEscape($perfil['idPerfil']); ?> -
+                                            <?php echo appEscape($perfil['nomePerfil']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">Expiração da Sessão
+                                <select name="tempoExpiracaoSessao" required class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2">
+                                    <?php foreach ([30, 60, 90, 120, 150, 180] as $timeout): ?>
+                                        <option value="<?php echo $timeout; ?>" <?php echo (int) ($usuarioEdicao['tempoExpiracaoSessao'] ?? 30) === $timeout ? 'selected' : ''; ?>>
+                                            <?php echo $timeout; ?> minutos
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                            <label class="flex items-center gap-2 rounded bg-gray-50 p-3 text-sm text-gray-700">
+                                <input type="checkbox" name="ativo" value="1" <?php echo !$usuarioEdicao || (int) $usuarioEdicao['ativo'] === 1 ? 'checked' : ''; ?>>
+                                Usuário Ativo
+                            </label>
+                            <label class="flex items-center gap-2 rounded bg-gray-50 p-3 text-sm text-gray-700">
+                                <input type="checkbox" name="bloqueado" value="1" <?php echo (int) ($usuarioEdicao['bloqueado'] ?? 0) === 1 ? 'checked' : ''; ?>
+                                    <?php echo ($usuarioEdicao['login'] ?? '') === 'admin-global' || (int) ($usuarioEdicao['idUsuario'] ?? 0) === (int) $usuarioAtual['idUsuario'] ? 'disabled' : ''; ?>>
+                                Bloquear Acesso ao Login
+                            </label>
+                            <label class="flex items-center gap-2 rounded bg-gray-50 p-3 text-sm text-gray-700 md:col-span-2">
+                                <input type="checkbox" name="forcarTrocaSenha" value="1" <?php echo (int) ($usuarioEdicao['forcarTrocaSenha'] ?? 0) === 1 ? 'checked' : ''; ?>>
+                                Forçar Troca de Senha no Próximo Login
+                            </label>
+                        </div>
+                    </section>
+
+                    <div class="flex gap-2">
+                        <button class="inline-flex items-center gap-2 rounded bg-elo-teal px-4 py-2 font-medium text-white hover:bg-elo-green">
+                            <i class="ph ph-floppy-disk" aria-hidden="true"></i>
+                            <?php echo $usuarioEdicao ? 'Salvar alterações' : 'Cadastrar usuário'; ?>
+                        </button>
+                        <?php if ($usuarioEdicao): ?>
+                            <a href="usuarios.php#pesquisa" class="inline-flex items-center gap-2 rounded border px-4 py-2 text-gray-700 hover:bg-gray-50">
+                                <i class="ph ph-x-circle" aria-hidden="true"></i>
+                                Cancelar
+                            </a>
+                        <?php endif; ?>
                     </div>
                 </form>
             </section>
@@ -235,7 +360,7 @@ $resultado = [
                 <div class="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                     <h2 class="text-lg font-semibold">Usuários cadastrados</h2>
                     <div class="flex gap-2">
-                        <input id="pesquisaUsuarios" type="search" placeholder="Pesquisar usuários..." aria-label="Pesquisar usuários" class="rounded border border-gray-300 px-3 py-2 text-sm">
+                        <input id="pesquisaUsuarios" data-filter-input="listaUsuarios" type="search" placeholder="Pesquisar usuários..." aria-label="Pesquisar usuários" class="rounded border border-gray-300 px-3 py-2 text-sm">
                         <button type="button" data-tab-open="manutencao" class="rounded bg-elo-teal px-4 py-2 text-sm font-medium text-white hover:bg-elo-green">+ Novo usuário</button>
                     </div>
                 </div>
@@ -248,21 +373,43 @@ $resultado = [
                                 <td class="p-3"><?php echo appEscape($usuario['nomeCompleto']); ?></td>
                                 <td class="p-3"><?php echo appEscape($usuario['login']); ?><br><span class="text-xs text-gray-500"><?php echo appEscape($usuario['email']); ?></span></td>
                                 <td class="p-3"><?php echo appEscape($usuario['nomePerfil']); ?></td>
-                                <td class="p-3"><?php echo (int) $usuario['ativo'] === 1 ? 'Ativo' : 'Inativo'; ?></td>
                                 <td class="p-3">
-                                    <div class="flex gap-3">
+                                    <?php echo (int) $usuario['bloqueado'] === 1
+                                        ? 'Bloqueado'
+                                        : ((int) $usuario['ativo'] === 1 ? 'Ativo' : 'Inativo'); ?>
+                                </td>
+                                <td class="whitespace-nowrap p-3">
+                                    <div class="flex flex-wrap items-center gap-3">
                                         <?php if ($usuario['login'] !== 'admin-global' || appIsPrimaryAdmin($usuarioAtual)): ?>
-                                            <a href="?editar=<?php echo (int) $usuario['idUsuario']; ?>#manutencao" class="font-medium text-elo-teal hover:underline">Alterar</a>
+                                            <a href="?editar=<?php echo (int) $usuario['idUsuario']; ?>#manutencao"
+                                               aria-label="Alterar usuário <?php echo appEscape($usuario['nomeCompleto']); ?>"
+                                               title="Alterar usuário"
+                                               class="inline-flex h-9 w-9 items-center justify-center rounded border border-elo-teal/20 text-elo-teal transition-colors hover:bg-elo-teal/10 focus:outline-none focus:ring-2 focus:ring-elo-teal">
+                                                <i class="ph ph-pencil-simple text-lg" aria-hidden="true"></i>
+                                            </a>
                                         <?php else: ?>
-                                            <span class="text-xs text-gray-500">Conta protegida</span>
+                                            <span class="rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">Conta protegida</span>
                                         <?php endif; ?>
-                                        <?php if ((int) $usuario['idUsuario'] !== (int) $usuarioAtual['idUsuario']): ?>
-                                            <form method="post" onsubmit="return confirm('Confirma excluir este usuário?')">
+                                        <?php if ((int) $usuario['idUsuario'] !== (int) $usuarioAtual['idUsuario']
+                                            && $usuario['login'] !== 'admin-global'): ?>
+                                            <form method="post" data-confirm="Confirma excluir este usuário?">
                                                 <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
+                                                <input type="hidden" name="tabToken" value="<?php echo appEscape((string) appCurrentTabToken()); ?>">
                                                 <input type="hidden" name="acao" value="excluir">
                                                 <input type="hidden" name="idUsuario" value="<?php echo (int) $usuario['idUsuario']; ?>">
-                                                <button class="font-medium text-red-600 hover:underline">Excluir</button>
+                                                <button type="submit" aria-label="Excluir usuário <?php echo appEscape($usuario['nomeCompleto']); ?>"
+                                                        title="Excluir usuário"
+                                                        class="inline-flex h-9 w-9 items-center justify-center rounded border border-red-200 text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500">
+                                                    <i class="ph ph-trash text-lg" aria-hidden="true"></i>
+                                                </button>
                                             </form>
+                                        <?php elseif ((int) $usuario['idUsuario'] === (int) $usuarioAtual['idUsuario']): ?>
+                                            <span class="rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">Conta atual</span>
+                                        <?php else: ?>
+                                            <span class="rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">Conta global protegida</span>
+                                        <?php endif; ?>
+                                        <?php if ($usuario['login'] === 'admin-global' && !appIsPrimaryAdmin($usuarioAtual)): ?>
+                                            <span class="text-xs text-gray-500">Apenas o admin-global pode gerenciar esta conta</span>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -274,15 +421,7 @@ $resultado = [
             </section>
         </main>
     </div>
-    <script>
-        document.getElementById('pesquisaUsuarios').addEventListener('input', (event) => {
-            const termo = event.target.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-            document.querySelectorAll('#listaUsuarios tr').forEach((linha) => {
-                const texto = linha.textContent.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-                linha.hidden = !texto.includes(termo);
-            });
-        });
-    </script>
-    <?php $toastSuccess = $resultado; include __DIR__ . '/../../../components/toast.php'; ?>
+    <?php $toastSuccess = $resultado; $toastError = $erro; include __DIR__ . '/../../../components/toast.php'; ?>
+    <script src="<?php echo appEscape(appBaseUrl() . '/assets/js/app.js?v=' . appJavascriptVersion()); ?>"></script>
 </body>
 </html>
