@@ -2,7 +2,7 @@
 require_once __DIR__ . '/access.php';
 
 if (appCurrentUser()) {
-    $user = appCurrentUser(true);
+    $user = appCurrentUser();
     $targetUrl = $user ? appFirstAllowedUrl($user) : null;
     if ($targetUrl !== null) {
         header('Location: ' . appTabUrl($targetUrl));
@@ -17,7 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = (string) ($_POST['senha'] ?? '');
 
     $query = appPdo()->prepare(
-        'SELECT idUsuario, senhaHash, ativo, bloqueado, forcarTrocaSenha
+        'SELECT idUsuario, senhaHash, ativo, bloqueado, forcarTrocaSenha,
+                tempoExpiracaoSessao
          FROM tbUsuario
          WHERE login = :login
          LIMIT 1'
@@ -34,12 +35,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $_SESSION['tabSessions'][$tabToken] = [
                 'idUsuario' => (int) $user['idUsuario'],
-                'lastActivityAt' => time(),
-                'expiresAt' => time() + 30 * 60,
+                'expiresAt' => time() + (int) $user['tempoExpiracaoSessao'] * 60,
                 'mustChangePassword' => (int) $user['forcarTrocaSenha'],
             ];
             session_regenerate_id(false);
-            $authenticatedUser = appCurrentUser(true);
+            $authenticatedUser = appCurrentUser();
 
             $targetUrl = $authenticatedUser ? appFirstAllowedUrl($authenticatedUser) : null;
             if ($targetUrl !== null) {

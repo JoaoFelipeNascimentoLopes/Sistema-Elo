@@ -136,6 +136,252 @@ runWhenReady(() => {
 
     applyUiTitleCase();
 
+    document.querySelectorAll('form[data-finance-contact-form]').forEach((form) => {
+        const documentInput = form.elements.namedItem('documento');
+        const documentType = form.elements.namedItem('tipoPessoa');
+        const phoneInput = form.elements.namedItem('telefone');
+        const cepInput = form.querySelector('[data-finance-cep]');
+        const cepButton = form.querySelector('[data-finance-cep-lookup]');
+        const cepMessage = form.querySelector('[data-finance-cep-message]');
+        const addressFields = Array.from(form.querySelectorAll('[data-finance-address]'));
+        const areaCodes = new Set([
+            '11', '12', '13', '14', '15', '16', '17', '18', '19', '21', '22', '24',
+            '27', '28', '31', '32', '33', '34', '35', '37', '38', '41', '42', '43',
+            '44', '45', '46', '47', '48', '49', '51', '53', '54', '55', '61', '62',
+            '63', '64', '65', '66', '67', '68', '69', '71', '73', '74', '75', '77',
+            '79', '81', '82', '83', '84', '85', '86', '87', '88', '89', '91', '92',
+            '93', '94', '95', '96', '97', '98', '99'
+        ]);
+        if (!documentInput || !documentType || !phoneInput) return;
+
+        const normalizeDocument = (value) => documentType.value === 'juridica'
+            ? value.toLocaleUpperCase('pt-BR').replace(/[^A-Z0-9]/g, '').slice(0, 14)
+            : value.replace(/\D/g, '').slice(0, 11);
+        const formatCpf = (value) => value
+            .replace(/^(\d{3})(\d)/, '$1.$2')
+            .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+            .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d{1,2})$/, '$1.$2.$3-$4');
+        const formatCnpj = (value) => value.slice(0, 2)
+            + (value.length > 2 ? `.${value.slice(2, 5)}` : '')
+            + (value.length > 5 ? `.${value.slice(5, 8)}` : '')
+            + (value.length > 8 ? `/${value.slice(8, 12)}` : '')
+            + (value.length > 12 ? `-${value.slice(12, 14)}` : '');
+        const formatDocument = (value) => documentType.value === 'juridica'
+            ? formatCnpj(normalizeDocument(value))
+            : formatCpf(normalizeDocument(value));
+        const isValidCpf = (cpf) => {
+            if (!/^\d{11}$/.test(cpf) || /^(\d)\1{10}$/.test(cpf)) return false;
+            const digits = Array.from(cpf, Number);
+            for (const position of [9, 10]) {
+                let sum = 0;
+                for (let index = 0; index < position; index++) sum += digits[index] * (position + 1 - index);
+                const remainder = (sum * 10) % 11;
+                if (digits[position] !== (remainder === 10 ? 0 : remainder)) return false;
+            }
+            return true;
+        };
+        const isValidCnpj = (cnpj) => {
+            if (!/^[A-Z0-9]{12}\d{2}$/.test(cnpj) || /^([A-Z0-9])\1{13}$/.test(cnpj)) return false;
+            const calculateDigit = (base, weights) => {
+                const sum = Array.from(base, (character, index) => (character.charCodeAt(0) - 48) * weights[index])
+                    .reduce((total, current) => total + current, 0);
+                const remainder = sum % 11;
+                return remainder < 2 ? 0 : 11 - remainder;
+            };
+            const first = calculateDigit(cnpj.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+            const second = calculateDigit(cnpj.slice(0, 12) + first, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+            return cnpj.slice(-2) === `${first}${second}`;
+        };
+        const applyMask = (input, value, formatter, characterPattern) => {
+            const cursor = input.selectionStart ?? input.value.length;
+            const charactersBeforeCursor = Array.from(input.value.slice(0, cursor))
+                .filter((character) => characterPattern.test(character)).length;
+            input.value = formatter(value);
+            let nextCursor = 0;
+            let seen = 0;
+            while (nextCursor < input.value.length && seen < charactersBeforeCursor) {
+                if (characterPattern.test(input.value[nextCursor])) seen++;
+                nextCursor++;
+            }
+            input.setSelectionRange(nextCursor, nextCursor);
+        };
+        const updateDocumentValidity = () => {
+            const value = normalizeDocument(documentInput.value);
+            const valid = value === ''
+                ? true
+                : documentType.value === 'juridica' ? isValidCnpj(value) : isValidCpf(value);
+            documentInput.setCustomValidity(valid ? '' : documentType.value === 'juridica'
+                ? 'Informe um CNPJ válido.'
+                : 'Informe um CPF válido.');
+        };
+        const updateDocumentMask = () => {
+            const hasDocumentType = documentType.value === 'fisica' || documentType.value === 'juridica';
+            documentInput.disabled = !hasDocumentType;
+            if (!hasDocumentType) {
+                documentInput.value = '';
+                documentInput.placeholder = 'Selecione o tipo de pessoa primeiro';
+                documentInput.inputMode = 'text';
+                documentInput.setCustomValidity('');
+                return;
+            }
+            const isCompany = documentType.value === 'juridica';
+            const pattern = isCompany ? /[A-Z0-9]/i : /\d/;
+            applyMask(documentInput, normalizeDocument(documentInput.value), formatDocument, pattern);
+            documentInput.placeholder = isCompany ? '00.000.000/0000-00' : '000.000.000-00';
+            documentInput.inputMode = isCompany ? 'text' : 'numeric';
+            updateDocumentValidity();
+        };
+        const formatPhone = (value) => {
+            const digits = value.replace(/\D/g, '').slice(0, 11);
+            if (digits.length <= 2) return digits ? `(${digits}` : '';
+            const subscriber = digits.slice(2);
+            const split = digits.length === 11 ? 5 : 4;
+            return `(${digits.slice(0, 2)}) ${subscriber.slice(0, split)}`
+                + (subscriber.length > split ? `-${subscriber.slice(split)}` : '');
+        };
+        const isValidPhone = (value) => {
+            const digits = value.replace(/\D/g, '');
+            if (!digits) return true;
+            if (!areaCodes.has(digits.slice(0, 2)) || /^(\d)\1+$/.test(digits)) return false;
+            const subscriber = digits.slice(2);
+            return (digits.length === 10 && /^[2-5]\d{7}$/.test(subscriber))
+                || (digits.length === 11 && /^9\d{8}$/.test(subscriber));
+        };
+        const updatePhoneValidity = () => {
+            phoneInput.setCustomValidity(isValidPhone(phoneInput.value)
+                ? ''
+                : 'Informe um telefone brasileiro válido com DDD.');
+        };
+
+        documentInput.addEventListener('input', () => {
+            applyMask(documentInput, normalizeDocument(documentInput.value), formatDocument, documentType.value === 'juridica' ? /[A-Z0-9]/i : /\d/);
+            updateDocumentValidity();
+        });
+        documentInput.addEventListener('blur', updateDocumentValidity);
+        documentType.addEventListener('change', () => {
+            documentInput.value = '';
+            updateDocumentMask();
+        });
+        phoneInput.addEventListener('input', () => {
+            applyMask(phoneInput, phoneInput.value.replace(/\D/g, '').slice(0, 11), formatPhone, /\d/);
+            updatePhoneValidity();
+        });
+        phoneInput.addEventListener('blur', updatePhoneValidity);
+        updateDocumentMask();
+        applyMask(phoneInput, phoneInput.value.replace(/\D/g, '').slice(0, 11), formatPhone, /\d/);
+        updatePhoneValidity();
+
+        if (!cepInput || !cepButton || !cepMessage || addressFields.length === 0) return;
+        const cepDigits = () => cepInput.value.replace(/\D/g, '');
+        const setCepMessage = (message, isError = false, isSuccess = false) => {
+            cepMessage.textContent = message;
+            cepMessage.classList.toggle('text-red-600', isError);
+            cepMessage.classList.toggle('text-green-700', isSuccess);
+            cepMessage.classList.toggle('text-gray-500', !isError && !isSuccess);
+        };
+        const updateCepValidity = () => {
+            const cep = cepDigits();
+            cepInput.setCustomValidity(!cep || (/^\d{8}$/.test(cep) && cep !== '00000000')
+                ? ''
+                : 'Informe um CEP válido com 8 dígitos.');
+        };
+        let previousCep = cepDigits();
+        let lookedUpCep = '';
+        let lookupTimer = null;
+        let lookupController = null;
+        let lookupSequence = 0;
+        const clearAddress = () => {
+            addressFields.forEach((field) => {
+                field.value = '';
+                field.readOnly = false;
+                field.removeAttribute('aria-readonly');
+                field.classList.remove('bg-gray-100', 'text-gray-600');
+            });
+            lookedUpCep = '';
+        };
+        const lookupCep = async () => {
+            const cep = cepDigits();
+            window.clearTimeout(lookupTimer);
+            updateCepValidity();
+            if (!/^\d{8}$/.test(cep) || cep === '00000000') {
+                cepInput.reportValidity();
+                return;
+            }
+            if (cep === lookedUpCep) return;
+            if (lookupController) lookupController.abort();
+            lookupController = new AbortController();
+            const controller = lookupController;
+            const sequence = ++lookupSequence;
+            const payload = new FormData();
+            payload.set('acao', 'consultarCep');
+            payload.set('cep', cep);
+            payload.set('csrfToken', form.elements.namedItem('csrfToken').value);
+            payload.set('tabToken', form.elements.namedItem('tabToken').value);
+            cepButton.disabled = true;
+            setCepMessage('Consultando CEP...');
+            try {
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    body: payload,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin',
+                    signal: controller.signal
+                });
+                const body = await response.text();
+                let result;
+                try {
+                    result = JSON.parse(body);
+                } catch {
+                    throw new Error('Não foi possível interpretar a resposta da consulta de CEP.');
+                }
+                if (!response.ok) throw new Error(result.message || 'Não foi possível consultar o CEP.');
+                if (sequence !== lookupSequence || cepDigits() !== cep) return;
+                addressFields.forEach((field) => {
+                    const value = result[field.dataset.financeAddress];
+                    field.value = typeof value === 'string' ? value : '';
+                    if (field.value !== '') {
+                        field.readOnly = true;
+                        field.setAttribute('aria-readonly', 'true');
+                        field.classList.add('bg-gray-100', 'text-gray-600');
+                    }
+                });
+                lookedUpCep = cep;
+                setCepMessage('Endereço preenchido pela consulta de CEP. Altere o CEP para liberar os campos.', false, true);
+            } catch (error) {
+                if (error.name !== 'AbortError' && sequence === lookupSequence) {
+                    setCepMessage(error.message || 'Falha ao consultar o CEP. Tente novamente.', true);
+                }
+            } finally {
+                if (sequence === lookupSequence) {
+                    cepButton.disabled = false;
+                    lookupController = null;
+                }
+            }
+        };
+        cepInput.addEventListener('input', () => {
+            const cep = cepDigits().slice(0, 8);
+            cepInput.value = cep.length > 5 ? `${cep.slice(0, 5)}-${cep.slice(5)}` : cep;
+            updateCepValidity();
+            if (cep !== previousCep) {
+                if (lookupController) lookupController.abort();
+                lookupSequence++;
+                clearAddress();
+                setCepMessage('CEP alterado. O endereço pode ser consultado novamente.');
+                previousCep = cep;
+            }
+            window.clearTimeout(lookupTimer);
+            if (/^\d{8}$/.test(cep) && cep !== lookedUpCep) {
+                lookupTimer = window.setTimeout(lookupCep, 450);
+            }
+        });
+        cepButton.addEventListener('click', lookupCep);
+        cepInput.addEventListener('blur', updateCepValidity);
+        cepInput.value = previousCep.length > 5
+            ? `${previousCep.slice(0, 5)}-${previousCep.slice(5)}`
+            : previousCep;
+        updateCepValidity();
+    });
+
     document.querySelectorAll('[data-institution-info-form]').forEach((form) => {
         const cnpjInput = form.querySelector('[data-institution-cnpj]');
         const phoneInput = form.querySelector('[data-institution-phone]');

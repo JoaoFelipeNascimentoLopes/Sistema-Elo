@@ -94,3 +94,24 @@ CREATE TABLE IF NOT EXISTS tbInformacoesInstituicao (
     atualizadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (idInformacoes)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tbFormaPagamento (
+    idFormaPagamento INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    nomeFormaPagamento VARCHAR(100) NOT NULL,
+    descricaoFormaPagamento VARCHAR(255) NULL,
+    statusFormaPagamento TINYINT(1) NOT NULL DEFAULT 1,
+    idUsuarioCriacao INT UNSIGNED NOT NULL,
+    idUsuarioAlteracao INT UNSIGNED NULL,
+    criadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (idFormaPagamento),
+    UNIQUE KEY uq_tbFormaPagamento_nomeFormaPagamento (nomeFormaPagamento),
+    KEY idx_tbFormaPagamento_idUsuarioCriacao (idUsuarioCriacao),
+    KEY idx_tbFormaPagamento_idUsuarioAlteracao (idUsuarioAlteracao),
+    CONSTRAINT fk_tbFormaPagamento_usuarioCriacao
+        FOREIGN KEY (idUsuarioCriacao) REFERENCES tbUsuario (idUsuario)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_tbFormaPagamento_usuarioAlteracao
+        FOREIGN KEY (idUsuarioAlteracao) REFERENCES tbUsuario (idUsuario)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

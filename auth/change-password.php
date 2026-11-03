@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/access.php';
-$user = appCurrentUser(true);
+$user = appCurrentUser();
 
 if (!$user) {
     header('Location: ' . appTabLoginUrl());
@@ -59,8 +59,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tabToken = appCurrentTabToken();
             $_SESSION['tabSessions'][$tabToken]['mustChangePassword'] = 0;
             session_regenerate_id(false);
-            $_SESSION['tabSessions'][$tabToken]['lastActivityAt'] = time();
-            $_SESSION['tabSessions'][$tabToken]['expiresAt'] = time() + (int) $user['tempoExpiracaoSessao'] * 60;
             $respond(200, ['success' => true, 'message' => 'Senha alterada com sucesso.']);
         }
     }

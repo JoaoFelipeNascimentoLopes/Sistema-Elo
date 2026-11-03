@@ -7,7 +7,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 appValidateCsrf();
-$user = appCurrentUser(true);
+$user = appCurrentUser();
 if (!$user) {
     http_response_code(401);
     header('Content-Type: application/json; charset=utf-8');

@@ -98,21 +98,34 @@ function appPageCatalog(): array
         'gestao-acolhidos' => 'ph-users',
     ];
     $pageNames = [
+        // Atendimento
         'atendimento/dashboard-atendimento.php' => 'Dashboard de Atendimento',
+        // Financeiro
         'financeiro/dashboard-financeiro.php' => 'Dashboard Financeiro',
         'financeiro/cadastros/categoria-lancamentos.php' => 'Categorias de Lançamentos',
         'financeiro/cadastros/fonte-recurso.php' => 'Fontes de Recursos',
+        'financeiro/cadastros/forma-pagamento.php' => 'Formas de Pagamento',
+        'financeiro/cadastros/fornecedores-prestadores.php' => 'Fornecedores/Prestadores',
+        'financeiro/cadastros/doadores-contribuintes.php' => 'Doadores/Contribuintes',
         'financeiro/relatorios/categoria-lancamentos.php' => 'Categorias de Lançamentos',
         'financeiro/relatorios/fontes-recurso.php' => 'Fontes de Recursos',
+        'financeiro/relatorios/formas-pagamento.php' => 'Formas de Pagamento',
+        'financeiro/relatorios/fornecedores-prestadores.php' => 'Fornecedores/Prestadores',
+        'financeiro/relatorios/doadores-contribuintes.php' => 'Doadores/Contribuintes',
+        // Geral
         'geral/dashboard-geral.php' => 'Dashboard Geral',
         'geral/cadastros/usuarios.php' => 'Usuários',
         'geral/cadastros/perfis-acesso.php' => 'Perfis de Acesso',
         'geral/relatorios/usuarios-por-perfis.php' => 'Usuários por Perfis',
+        // Gestão de Acolhidos
         'gestao-acolhidos/dashboard-gestao-acolhidos.php' => 'Dashboard Gestão de Acolhidos',
     ];
     $legacyPageKeys = [
+        // Financeiro
         'financeiro/cadastros/categoria-lancamentos.php' => 'categoria-lancamentos',
         'financeiro/cadastros/fonte-recurso.php' => 'fonte-recurso',
+        'financeiro/cadastros/forma-pagamento.php' => 'forma-pagamento',
+        // Geral
         'geral/cadastros/usuarios.php' => 'usuarios',
         'geral/cadastros/perfis-acesso.php' => 'perfis-acesso',
     ];
@@ -216,7 +229,7 @@ function appPageCatalog(): array
     return $catalog;
 }
 
-function appCurrentUser(bool $refresh = false): ?array
+function appCurrentUser(): ?array
 {
     appStartSession();
     $tabToken = appCurrentTabToken();
@@ -242,16 +255,24 @@ function appCurrentUser(bool $refresh = false): ?array
     }
 
     $now = time();
-    $timeoutSeconds = (int) $user['tempoExpiracaoSessao'] * 60;
-    if ($now - (int) $_SESSION['tabSessions'][$tabToken]['lastActivityAt'] >= $timeoutSeconds) {
+    $expiresAt = $_SESSION['tabSessions'][$tabToken]['expiresAt'] ?? null;
+    if (!is_int($expiresAt) && !(is_string($expiresAt) && ctype_digit($expiresAt))) {
+        $lastActivityAt = $_SESSION['tabSessions'][$tabToken]['lastActivityAt'] ?? null;
+        if (!is_int($lastActivityAt) && !(is_string($lastActivityAt) && ctype_digit($lastActivityAt))) {
+            unset($_SESSION['tabSessions'][$tabToken]);
+            return null;
+        }
+        $expiresAt = (int) $lastActivityAt + (int) $user['tempoExpiracaoSessao'] * 60;
+        $_SESSION['tabSessions'][$tabToken]['expiresAt'] = $expiresAt;
+    }
+
+    if ($now >= (int) $expiresAt) {
         unset($_SESSION['tabSessions'][$tabToken]);
         return null;
     }
 
-    $_SESSION['tabSessions'][$tabToken]['lastActivityAt'] = $now;
-    $_SESSION['tabSessions'][$tabToken]['expiresAt'] = $now + $timeoutSeconds;
     $user['permissoes'] = json_decode($user['permissoes'], true, 512, JSON_THROW_ON_ERROR);
-    $user['sessionExpiresAt'] = $_SESSION['tabSessions'][$tabToken]['expiresAt'];
+    $user['sessionExpiresAt'] = (int) $expiresAt;
     $user['mustChangePassword'] = (int) $_SESSION['tabSessions'][$tabToken]['mustChangePassword'];
 
     return $user;
@@ -259,7 +280,7 @@ function appCurrentUser(bool $refresh = false): ?array
 
 function appCanAccess(string $pageKey, ?array $user = null): bool
 {
-    $user = $user ?? appCurrentUser(true);
+    $user = $user ?? appCurrentUser();
     if (!$user) {
         return false;
     }
@@ -283,7 +304,7 @@ function appCanAccess(string $pageKey, ?array $user = null): bool
 
 function appIsPrimaryAdmin(?array $user = null): bool
 {
-    $user = $user ?? appCurrentUser(true);
+    $user = $user ?? appCurrentUser();
 
     return $user !== null && $user['login'] === 'admin-global';
 }
@@ -308,7 +329,7 @@ function appFirstAllowedUrl(array $user): ?string
 
 function appFirstAllowedModuleUrl(string $moduleKey, ?array $user = null): ?string
 {
-    $user = $user ?? appCurrentUser(true);
+    $user = $user ?? appCurrentUser();
     $module = appPageCatalog()[$moduleKey] ?? null;
     if (!$user || !$module) {
         return null;
@@ -394,7 +415,7 @@ function appSidebarPageGroups(string $moduleKey, ?array $user = null): array
 
 function appRequirePage(string $pageKey): array
 {
-    $user = appCurrentUser(true);
+    $user = appCurrentUser();
     if (!$user) {
         header('Location: ' . appTabLoginUrl());
         exit;
