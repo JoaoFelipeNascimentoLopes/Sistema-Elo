@@ -1,5 +1,7 @@
 <?php
 
+date_default_timezone_set('America/Sao_Paulo');
+
 function appStartSession(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) {
@@ -90,12 +92,14 @@ function appPageCatalog(): array
         'financeiro' => 'Financeiro',
         'geral' => 'Geral',
         'gestao-acolhidos' => 'Gestão de Acolhidos',
+        'estoque' => 'Estoque',
     ];
     $moduleIcons = [
         'atendimento' => 'ph-stethoscope',
         'financeiro' => 'ph-currency-circle-dollar',
         'geral' => 'ph-gear',
         'gestao-acolhidos' => 'ph-users',
+        'estoque' => 'ph-package',
     ];
     $pageNames = [
         // Atendimento
@@ -107,11 +111,15 @@ function appPageCatalog(): array
         'financeiro/cadastros/forma-pagamento.php' => 'Formas de Pagamento',
         'financeiro/cadastros/fornecedores-prestadores.php' => 'Fornecedores/Prestadores',
         'financeiro/cadastros/doadores-contribuintes.php' => 'Doadores/Contribuintes',
+        'financeiro/movimentacoes/lancamentos-financeiros.php' => 'Lançamentos Financeiros',
+        'financeiro/movimentacoes/metas-orcamentarias.php' => 'Metas Orçamentárias',
         'financeiro/relatorios/categoria-lancamentos.php' => 'Categorias de Lançamentos',
         'financeiro/relatorios/fontes-recurso.php' => 'Fontes de Recursos',
         'financeiro/relatorios/formas-pagamento.php' => 'Formas de Pagamento',
         'financeiro/relatorios/fornecedores-prestadores.php' => 'Fornecedores/Prestadores',
         'financeiro/relatorios/doadores-contribuintes.php' => 'Doadores/Contribuintes',
+        'financeiro/relatorios/extrato-lancamentos.php' => 'Extrato de Lançamentos Financeiros',
+        'financeiro/relatorios/resumo-metas-orcamentarias.php' => 'Resumo de Metas Orçamentárias',
         // Geral
         'geral/dashboard-geral.php' => 'Dashboard Geral',
         'geral/cadastros/usuarios.php' => 'Usuários',
@@ -119,6 +127,7 @@ function appPageCatalog(): array
         'geral/relatorios/usuarios-por-perfis.php' => 'Usuários por Perfis',
         // Gestão de Acolhidos
         'gestao-acolhidos/dashboard-gestao-acolhidos.php' => 'Dashboard Gestão de Acolhidos',
+        'gestao-acolhidos/cadastros/acolhidos.php' => 'Cadastro de Acolhidos',
     ];
     $legacyPageKeys = [
         // Financeiro

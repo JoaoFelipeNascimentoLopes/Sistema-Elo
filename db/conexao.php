@@ -13,6 +13,7 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
     ]);
+    $pdo->exec("SET time_zone = '-03:00'");
 } catch (PDOException $exception) {
     error_log('Falha ao conectar ao banco de dados: ' . $exception->getMessage());
     throw new RuntimeException('Não foi possível conectar ao banco de dados.', 0, $exception);

@@ -136,10 +136,64 @@ runWhenReady(() => {
 
     applyUiTitleCase();
 
+    document.querySelectorAll('[data-money-input]').forEach((input) => {
+        const extractDigits = (value) => value.replace(/\D/g, '').slice(0, 14);
+        const normalizeDigits = (value) => extractDigits(value).replace(/^0+(?=\d)/, '');
+        const formatMoneyInput = (digits) => {
+            if (!digits) return '';
+            const padded = digits.padStart(3, '0');
+            const whole = padded.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+            return `${whole},${padded.slice(-2)}`;
+        };
+        const renderMoneyInput = (digits) => {
+            input.dataset.moneyDigits = normalizeDigits(digits);
+            input.value = formatMoneyInput(input.dataset.moneyDigits);
+            input.setSelectionRange(input.value.length, input.value.length);
+        };
+        const digitIndexAt = (offset) => {
+            const displayDigits = input.value.slice(0, offset).replace(/\D/g, '').length;
+            const paddingDigits = Math.max(0, input.value.replace(/\D/g, '').length - input.dataset.moneyDigits.length);
+            return Math.max(0, Math.min(input.dataset.moneyDigits.length, displayDigits - paddingDigits));
+        };
+        const applyEdit = (inputType, insertedText = '') => {
+            const digits = input.dataset.moneyDigits;
+            const selectionStart = input.selectionStart ?? input.value.length;
+            const selectionEnd = input.selectionEnd ?? selectionStart;
+            let start = digitIndexAt(selectionStart);
+            let end = digitIndexAt(selectionEnd);
+
+            if (start === end && inputType === 'deleteContentBackward' && start > 0) {
+                start--;
+            } else if (start === end && inputType === 'deleteContentForward' && end < digits.length) {
+                end++;
+            }
+
+            const insertedDigits = extractDigits(insertedText);
+            const nextDigits = digits.slice(0, start) + insertedDigits + digits.slice(end);
+            renderMoneyInput(nextDigits);
+        };
+
+        input.dataset.moneyDigits = normalizeDigits(input.value);
+        input.value = formatMoneyInput(input.dataset.moneyDigits);
+        input.addEventListener('beforeinput', (event) => {
+            if (!event.inputType.startsWith('insert') && !event.inputType.startsWith('delete')) return;
+            event.preventDefault();
+            if (event.inputType === 'insertFromPaste') return;
+            applyEdit(event.inputType, event.data || '');
+        });
+        input.addEventListener('paste', (event) => {
+            event.preventDefault();
+            applyEdit('insertFromPaste', event.clipboardData?.getData('text') || '');
+        });
+    });
+
     document.querySelectorAll('form[data-finance-contact-form]').forEach((form) => {
         const documentInput = form.elements.namedItem('documento');
         const documentType = form.elements.namedItem('tipoPessoa');
         const phoneInput = form.elements.namedItem('telefone');
+        const legalOnlyFields = Array.from(form.querySelectorAll('[data-finance-legal-only]'));
+        const personNameLabels = Array.from(form.querySelectorAll('[data-finance-person-name-label]'));
+        const documentLabels = Array.from(form.querySelectorAll('[data-finance-document-label]'));
         const cepInput = form.querySelector('[data-finance-cep]');
         const cepButton = form.querySelector('[data-finance-cep-lookup]');
         const cepMessage = form.querySelector('[data-finance-cep-message]');
@@ -217,6 +271,25 @@ runWhenReady(() => {
         const updateDocumentMask = () => {
             const hasDocumentType = documentType.value === 'fisica' || documentType.value === 'juridica';
             documentInput.disabled = !hasDocumentType;
+            const isCompany = documentType.value === 'juridica';
+            legalOnlyFields.forEach((container) => {
+                container.hidden = !isCompany;
+                container.classList.toggle('hidden', !isCompany);
+                container.querySelectorAll('input, select, textarea').forEach((input) => {
+                    input.disabled = !isCompany;
+                    if (!isCompany) input.value = '';
+                });
+            });
+            personNameLabels.forEach((label) => {
+                label.textContent = documentType.value === 'fisica'
+                    ? 'Nome completo'
+                    : isCompany ? 'Razão social' : 'Nome / razão social';
+            });
+            documentLabels.forEach((label) => {
+                label.textContent = documentType.value === 'fisica'
+                    ? 'CPF'
+                    : isCompany ? 'CNPJ' : 'CPF/CNPJ';
+            });
             if (!hasDocumentType) {
                 documentInput.value = '';
                 documentInput.placeholder = 'Selecione o tipo de pessoa primeiro';
@@ -224,7 +297,6 @@ runWhenReady(() => {
                 documentInput.setCustomValidity('');
                 return;
             }
-            const isCompany = documentType.value === 'juridica';
             const pattern = isCompany ? /[A-Z0-9]/i : /\d/;
             applyMask(documentInput, normalizeDocument(documentInput.value), formatDocument, pattern);
             documentInput.placeholder = isCompany ? '00.000.000/0000-00' : '000.000.000-00';
@@ -920,7 +992,21 @@ runWhenReady(() => {
         };
 
         buttons.forEach((button, index) => {
-            button.addEventListener('click', () => activate(button.dataset.tabTarget, true));
+            button.addEventListener('click', () => {
+                activate(button.dataset.tabTarget, true);
+
+                if (button.dataset.tabTarget !== 'pesquisa') return;
+
+                const url = new URL(window.location.href);
+                const isEditing = url.searchParams.has('editar') || url.searchParams.has('editarFicha');
+                if (!isEditing) return;
+
+                url.searchParams.delete('editar');
+                url.searchParams.delete('editarFicha');
+                url.searchParams.delete('subaba');
+                url.hash = 'pesquisa';
+                window.location.assign(url.toString());
+            });
             button.addEventListener('keydown', (event) => {
                 if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
                 event.preventDefault();

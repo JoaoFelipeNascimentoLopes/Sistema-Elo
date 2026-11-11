@@ -192,7 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tipo = is_scalar($tipoInput) ? (string) $tipoInput : '';
             $documento = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', is_scalar($docInput) ? (string) $docInput : ''));
             $nome = is_scalar($nameInput) ? trim((string) $nameInput) : '';
-            $fantasia = is_scalar($tradeInput) ? trim((string) $tradeInput) : '';
+            $fantasia = $tipo === 'juridica' && is_scalar($tradeInput) ? trim((string) $tradeInput) : '';
             $email = is_scalar($emailInput) ? trim((string) $emailInput) : '';
             $telefone = preg_replace('/\D+/', '', is_scalar($phoneInput) ? (string) $phoneInput : '');
             $cep = preg_replace('/\D+/', '', is_scalar($cepInput) ? (string) $cepInput : '');
@@ -413,70 +413,87 @@ $abaInicial = ($doadorEdicao || ($erro !== '' && $_SERVER['REQUEST_METHOD'] === 
                     <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
                     <input type="hidden" name="acao" value="salvar">
                     <input type="hidden" name="idDoadorContribuinte" value="<?php echo (int) ($doadorEdicao['idDoadorContribuinte'] ?? 0); ?>">
-                    <label class="text-sm font-medium text-gray-700">Tipo de pessoa
-                        <select name="tipoPessoa" data-finance-document-type required class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2">
-                            <option value="">Selecione</option>
-                            <option value="fisica" <?php echo ($doadorEdicao['tipoPessoa'] ?? '') === 'fisica' ? 'selected' : ''; ?>>Pessoa Física</option>
-                            <option value="juridica" <?php echo ($doadorEdicao['tipoPessoa'] ?? '') === 'juridica' ? 'selected' : ''; ?>>Pessoa Jurídica</option>
-                        </select>
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">CPF/CNPJ
-                        <input name="documento" data-finance-document required <?php echo in_array(($doadorEdicao['tipoPessoa'] ?? ''), ['fisica', 'juridica'], true) ? '' : 'disabled'; ?> maxlength="18" inputmode="text" value="<?php echo appEscape((string) ($doadorEdicao['documento'] ?? '')); ?>" placeholder="Informe o CPF ou CNPJ" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">Nome / Razão Social
-                        <input name="nomeRazaoSocial" required maxlength="150" value="<?php echo appEscape((string) ($doadorEdicao['nomeRazaoSocial'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">Nome Fantasia
-                        <input name="nomeFantasia" maxlength="150" value="<?php echo appEscape((string) ($doadorEdicao['nomeFantasia'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">E-mail
-                        <input type="email" name="email" maxlength="190" value="<?php echo appEscape((string) ($doadorEdicao['email'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">Telefone
-                        <input type="tel" name="telefone" data-finance-phone inputmode="tel" maxlength="20" value="<?php echo appEscape((string) ($doadorEdicao['telefone'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <div class="grid gap-4 md:grid-cols-4 md:col-span-2">
-                        <div>
-                            <label class="text-sm font-medium text-gray-700" for="cep-doador">CEP
-                                <input id="cep-doador" name="cep" data-finance-cep inputmode="numeric" maxlength="9" value="<?php echo appEscape((string) ($doadorEdicao['cep'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                    <fieldset class="grid gap-4 rounded-lg border border-gray-200 p-4 md:col-span-2 md:grid-cols-2">
+                        <legend class="px-2 text-sm font-semibold text-gray-700">1. Identificação</legend>
+                        <label class="text-sm font-medium text-gray-700">Tipo de pessoa
+                            <select name="tipoPessoa" data-finance-document-type required class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2">
+                                <option value="">Selecione</option>
+                                <option value="fisica" <?php echo ($doadorEdicao['tipoPessoa'] ?? '') === 'fisica' ? 'selected' : ''; ?>>Pessoa Física</option>
+                                <option value="juridica" <?php echo ($doadorEdicao['tipoPessoa'] ?? '') === 'juridica' ? 'selected' : ''; ?>>Pessoa Jurídica</option>
+                            </select>
+                        </label>
+                        <label class="text-sm font-medium text-gray-700"><span data-finance-document-label>CPF/CNPJ</span>
+                            <input name="documento" data-finance-document required <?php echo in_array(($doadorEdicao['tipoPessoa'] ?? ''), ['fisica', 'juridica'], true) ? '' : 'disabled'; ?> maxlength="18" inputmode="text" value="<?php echo appEscape((string) ($doadorEdicao['documento'] ?? '')); ?>" placeholder="Informe o CPF ou CNPJ" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        </label>
+                        <label class="text-sm font-medium text-gray-700 md:col-span-2"><span data-finance-person-name-label>Nome completo / razão social</span>
+                            <input name="nomeRazaoSocial" required maxlength="150" value="<?php echo appEscape((string) ($doadorEdicao['nomeRazaoSocial'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        </label>
+                        <label data-finance-legal-only <?php echo ($doadorEdicao['tipoPessoa'] ?? '') === 'juridica' ? '' : 'hidden'; ?> class="text-sm font-medium text-gray-700 md:col-span-2">Nome Fantasia
+                            <input name="nomeFantasia" maxlength="150" value="<?php echo appEscape((string) ($doadorEdicao['nomeFantasia'] ?? '')); ?>" <?php echo ($doadorEdicao['tipoPessoa'] ?? '') === 'juridica' ? '' : 'disabled'; ?> class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        </label>
+                    </fieldset>
+
+                    <fieldset class="grid gap-4 rounded-lg border border-gray-200 p-4 md:col-span-2 md:grid-cols-2">
+                        <legend class="px-2 text-sm font-semibold text-gray-700">2. Contato</legend>
+                        <label class="text-sm font-medium text-gray-700">E-mail
+                            <input type="email" name="email" maxlength="190" value="<?php echo appEscape((string) ($doadorEdicao['email'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        </label>
+                        <label class="text-sm font-medium text-gray-700">Telefone
+                            <input type="tel" name="telefone" data-finance-phone inputmode="tel" maxlength="20" value="<?php echo appEscape((string) ($doadorEdicao['telefone'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        </label>
+                    </fieldset>
+
+                    <fieldset class="grid gap-4 rounded-lg border border-gray-200 p-4 md:col-span-2">
+                        <legend class="px-2 text-sm font-semibold text-gray-700">3. Endereço</legend>
+                        <div class="grid gap-4 md:grid-cols-4">
+                            <div>
+                                <label class="text-sm font-medium text-gray-700" for="cep-doador">CEP
+                                    <span class="mt-1 flex gap-2">
+                                        <input id="cep-doador" name="cep" data-finance-cep inputmode="numeric" maxlength="9" value="<?php echo appEscape((string) ($doadorEdicao['cep'] ?? '')); ?>" class="min-w-0 flex-1 rounded border border-gray-300 px-3 py-2">
+                                        <button type="button" data-finance-cep-lookup class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded border border-elo-teal text-elo-teal transition-colors hover:bg-elo-teal/10 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Buscar endereço pelo CEP" title="Buscar endereço pelo CEP">
+                                            <i class="ph ph-magnifying-glass text-lg" aria-hidden="true"></i>
+                                        </button>
+                                    </span>
+                                </label>
+                                <p data-finance-cep-message role="status" aria-live="polite" class="mt-1 text-xs text-gray-500"></p>
+                            </div>
+                            <label class="text-sm font-medium text-gray-700 md:col-span-3">Logradouro
+                                <input name="logradouro" data-finance-address="logradouro" maxlength="150" value="<?php echo appEscape((string) ($doadorEdicao['logradouro'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
                             </label>
-                            <button type="button" data-finance-cep-lookup class="mt-2 rounded border border-elo-teal px-3 py-1.5 text-sm text-elo-teal hover:bg-elo-teal/10">Buscar CEP</button>
-                            <p data-finance-cep-message role="status" aria-live="polite" class="mt-1 text-xs text-gray-500"></p>
+                            <label class="text-sm font-medium text-gray-700">Número
+                                <input name="numero" maxlength="20" value="<?php echo appEscape((string) ($doadorEdicao['numero'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            </label>
+                            <label class="text-sm font-medium text-gray-700 md:col-span-3">Complemento
+                                <input name="complemento" maxlength="100" value="<?php echo appEscape((string) ($doadorEdicao['complemento'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            </label>
+                            <label class="text-sm font-medium text-gray-700 md:col-span-2">Bairro
+                                <input name="bairro" data-finance-address="bairro" maxlength="100" value="<?php echo appEscape((string) ($doadorEdicao['bairro'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">Cidade
+                                <input name="cidade" data-finance-address="cidade" maxlength="100" value="<?php echo appEscape((string) ($doadorEdicao['cidade'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            </label>
+                            <label class="text-sm font-medium text-gray-700">UF
+                                <input name="uf" data-finance-address="uf" maxlength="2" value="<?php echo appEscape((string) ($doadorEdicao['uf'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            </label>
                         </div>
-                        <label class="text-sm font-medium text-gray-700 md:col-span-3">Logradouro
-                            <input name="logradouro" data-finance-address="logradouro" maxlength="150" value="<?php echo appEscape((string) ($doadorEdicao['logradouro'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                    </fieldset>
+
+                    <fieldset class="grid gap-4 rounded-lg border border-gray-200 p-4 md:col-span-2 md:grid-cols-2">
+                        <legend class="px-2 text-sm font-semibold text-gray-700">4. Observações e controle</legend>
+                        <label class="text-sm font-medium text-gray-700 md:col-span-2">Observações
+                            <textarea name="observacoes" maxlength="255" rows="3" class="mt-1 w-full rounded border border-gray-300 px-3 py-2"><?php echo appEscape((string) ($doadorEdicao['observacoes'] ?? '')); ?></textarea>
                         </label>
-                        <label class="text-sm font-medium text-gray-700">Número
-                            <input name="numero" maxlength="20" value="<?php echo appEscape((string) ($doadorEdicao['numero'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        <label class="flex items-center gap-2 text-sm text-gray-700">
+                            <input type="checkbox" name="statusDoador" value="1" <?php echo !isset($doadorEdicao['statusDoador']) || (int) $doadorEdicao['statusDoador'] === 1 ? 'checked' : ''; ?> class="rounded border-gray-300 text-elo-teal focus:ring-elo-teal">
+                            Cadastro ativo
                         </label>
-                        <label class="text-sm font-medium text-gray-700 md:col-span-3">Complemento
-                            <input name="complemento" maxlength="100" value="<?php echo appEscape((string) ($doadorEdicao['complemento'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                        </label>
-                        <label class="text-sm font-medium text-gray-700 md:col-span-2">Bairro
-                            <input name="bairro" data-finance-address="bairro" maxlength="100" value="<?php echo appEscape((string) ($doadorEdicao['bairro'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                        </label>
-                        <label class="text-sm font-medium text-gray-700">Cidade
-                            <input name="cidade" data-finance-address="cidade" maxlength="100" value="<?php echo appEscape((string) ($doadorEdicao['cidade'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                        </label>
-                        <label class="text-sm font-medium text-gray-700">UF
-                            <input name="uf" data-finance-address="uf" maxlength="2" value="<?php echo appEscape((string) ($doadorEdicao['uf'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                        </label>
-                    </div>
-                    <label class="text-sm font-medium text-gray-700 md:col-span-2">Observações
-                        <textarea name="observacoes" maxlength="255" rows="3" class="mt-1 w-full rounded border border-gray-300 px-3 py-2"><?php echo appEscape((string) ($doadorEdicao['observacoes'] ?? '')); ?></textarea>
-                    </label>
-                    <label class="flex items-center gap-2 text-sm text-gray-700">
-                        <input type="checkbox" name="statusDoador" value="1" <?php echo !isset($doadorEdicao['statusDoador']) || (int) $doadorEdicao['statusDoador'] === 1 ? 'checked' : ''; ?> class="rounded border-gray-300 text-elo-teal focus:ring-elo-teal">
-                        Cadastro ativo
-                    </label>
-                    <div class="grid gap-4 md:grid-cols-2 md:col-span-2">
                         <label class="text-sm font-medium text-gray-700">Criado por
                             <input value="<?php echo appEscape($criadoPor); ?>" disabled class="mt-1 w-full cursor-not-allowed rounded border border-gray-200 bg-gray-100 px-3 py-2 text-gray-600">
                         </label>
                         <label class="text-sm font-medium text-gray-700">Alterado por
                             <input value="<?php echo appEscape($alteradoPor !== '' ? $alteradoPor : '—'); ?>" disabled class="mt-1 w-full cursor-not-allowed rounded border border-gray-200 bg-gray-100 px-3 py-2 text-gray-600">
                         </label>
-                    </div>
+                    </fieldset>
                     <div class="flex flex-wrap gap-2 md:col-span-2">
                         <button type="submit" class="inline-flex items-center gap-2 rounded bg-elo-teal px-4 py-2 font-medium text-white hover:bg-elo-green"><i class="ph ph-floppy-disk" aria-hidden="true"></i><?php echo !empty($doadorEdicao['idDoadorContribuinte']) ? 'Salvar alterações' : 'Cadastrar'; ?></button>
                         <?php if (!empty($doadorEdicao['idDoadorContribuinte'])): ?><a href="doadores-contribuintes.php#pesquisa" class="inline-flex items-center gap-2 rounded border px-4 py-2 text-gray-700 hover:bg-gray-50"><i class="ph ph-x-circle" aria-hidden="true"></i>Cancelar</a><?php endif; ?>
@@ -494,7 +511,7 @@ $abaInicial = ($doadorEdicao || ($erro !== '' && $_SERVER['REQUEST_METHOD'] === 
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full min-w-[1000px] text-left text-sm">
-                        <thead class="border-b bg-gray-50 text-gray-600"><tr><th class="p-3">Nome / Razão Social</th><th class="p-3">CPF/CNPJ</th><th class="p-3">E-mail</th><th class="p-3">Telefone</th><th class="p-3">Cidade/UF</th><th class="p-3">Status</th><th class="p-3">Ações</th></tr></thead>
+                        <thead class="border-b bg-gray-50 text-gray-600"><tr><th class="p-3">Nome completo / Razão Social</th><th class="p-3">CPF/CNPJ</th><th class="p-3">E-mail</th><th class="p-3">Telefone</th><th class="p-3">Cidade/UF</th><th class="p-3">Status</th><th class="p-3">Ações</th></tr></thead>
                         <tbody id="listaDoadores">
                         <?php foreach ($doadores as $doador): ?>
                             <tr class="border-b hover:bg-gray-50">

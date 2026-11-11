@@ -104,8 +104,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tipoPessoa = is_scalar($tipoPessoaInput) ? (string) $tipoPessoaInput : '';
             $documento = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', is_scalar($documentoInput) ? (string) $documentoInput : ''));
             $nome = is_scalar($nomeInput) ? trim((string) $nomeInput) : '';
-            $fantasia = is_scalar($fantasiaInput) ? trim((string) $fantasiaInput) : '';
-            $contato = is_scalar($contatoInput) ? trim((string) $contatoInput) : '';
+            $fantasia = $tipoPessoa === 'juridica' && is_scalar($fantasiaInput) ? trim((string) $fantasiaInput) : '';
+            $contato = $tipoPessoa === 'juridica' && is_scalar($contatoInput) ? trim((string) $contatoInput) : '';
             $email = is_scalar($emailInput) ? trim((string) $emailInput) : '';
             $telefone = preg_replace('/\D+/', '', is_scalar($telefoneInput) ? (string) $telefoneInput : '');
             $observacoes = is_scalar($observacoesInput) ? trim((string) $observacoesInput) : '';
@@ -327,47 +327,61 @@ $abaInicial = ($fornecedorEdicao || ($erro !== '' && $_SERVER['REQUEST_METHOD'] 
                     <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
                     <input type="hidden" name="acao" value="salvar">
                     <input type="hidden" name="idFornecedorPrestador" value="<?php echo (int) ($fornecedorEdicao['idFornecedorPrestador'] ?? 0); ?>">
-                    <label class="text-sm font-medium text-gray-700">Tipo de pessoa
-                        <select name="tipoPessoa" data-finance-document-type required class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2">
-                            <option value="">Selecione</option>
-                            <option value="fisica" <?php echo ($fornecedorEdicao['tipoPessoa'] ?? '') === 'fisica' ? 'selected' : ''; ?>>Pessoa Física</option>
-                            <option value="juridica" <?php echo ($fornecedorEdicao['tipoPessoa'] ?? '') === 'juridica' ? 'selected' : ''; ?>>Pessoa Jurídica</option>
-                        </select>
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">CPF/CNPJ
-                        <input name="documento" data-finance-document required <?php echo in_array(($fornecedorEdicao['tipoPessoa'] ?? ''), ['fisica', 'juridica'], true) ? '' : 'disabled'; ?> maxlength="18" inputmode="text" value="<?php echo appEscape((string) ($fornecedorEdicao['documento'] ?? '')); ?>"
-                               placeholder="Somente números ou CNPJ alfanumérico" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">Nome / Razão Social
-                        <input name="nomeRazaoSocial" required maxlength="150" value="<?php echo appEscape((string) ($fornecedorEdicao['nomeRazaoSocial'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">Nome Fantasia
-                        <input name="nomeFantasia" maxlength="150" value="<?php echo appEscape((string) ($fornecedorEdicao['nomeFantasia'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">Pessoa de contato
-                        <input name="nomeContato" maxlength="150" value="<?php echo appEscape((string) ($fornecedorEdicao['nomeContato'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">E-mail
-                        <input type="email" name="email" maxlength="190" value="<?php echo appEscape((string) ($fornecedorEdicao['email'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="text-sm font-medium text-gray-700">Telefone
-                        <input type="tel" name="telefone" data-finance-phone inputmode="tel" maxlength="20" value="<?php echo appEscape((string) ($fornecedorEdicao['telefone'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    </label>
-                    <label class="flex items-center gap-2 self-end pb-2 text-sm text-gray-700">
-                        <input type="checkbox" name="statusFornecedor" value="1" <?php echo !isset($fornecedorEdicao['statusFornecedor']) || (int) $fornecedorEdicao['statusFornecedor'] === 1 ? 'checked' : ''; ?> class="rounded border-gray-300 text-elo-teal focus:ring-elo-teal">
-                        Cadastro ativo
-                    </label>
-                    <label class="text-sm font-medium text-gray-700 md:col-span-2">Observações
-                        <textarea name="observacoes" maxlength="255" rows="3" class="mt-1 w-full rounded border border-gray-300 px-3 py-2"><?php echo appEscape((string) ($fornecedorEdicao['observacoes'] ?? '')); ?></textarea>
-                    </label>
-                    <div class="grid gap-4 md:grid-cols-2 md:col-span-2">
+                    <fieldset class="grid gap-4 rounded-lg border border-gray-200 p-4 md:col-span-2 md:grid-cols-2">
+                        <legend class="px-2 text-sm font-semibold text-gray-700">1. Identificação</legend>
+                        <label class="text-sm font-medium text-gray-700">Tipo de pessoa
+                            <select name="tipoPessoa" data-finance-document-type required class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2">
+                                <option value="">Selecione</option>
+                                <option value="fisica" <?php echo ($fornecedorEdicao['tipoPessoa'] ?? '') === 'fisica' ? 'selected' : ''; ?>>Pessoa Física</option>
+                                <option value="juridica" <?php echo ($fornecedorEdicao['tipoPessoa'] ?? '') === 'juridica' ? 'selected' : ''; ?>>Pessoa Jurídica</option>
+                            </select>
+                        </label>
+                        <label class="text-sm font-medium text-gray-700"><span data-finance-document-label>CPF/CNPJ</span>
+                            <input name="documento" data-finance-document required <?php echo in_array(($fornecedorEdicao['tipoPessoa'] ?? ''), ['fisica', 'juridica'], true) ? '' : 'disabled'; ?> maxlength="18" inputmode="text" value="<?php echo appEscape((string) ($fornecedorEdicao['documento'] ?? '')); ?>"
+                                   placeholder="Somente números ou CNPJ alfanumérico" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        </label>
+                        <label class="text-sm font-medium text-gray-700 md:col-span-2"><span data-finance-person-name-label>Nome completo / razão social</span>
+                            <input name="nomeRazaoSocial" required maxlength="150" value="<?php echo appEscape((string) ($fornecedorEdicao['nomeRazaoSocial'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        </label>
+                    </fieldset>
+
+                    <fieldset data-finance-legal-only <?php echo ($fornecedorEdicao['tipoPessoa'] ?? '') === 'juridica' ? '' : 'hidden'; ?> class="grid gap-4 rounded-lg border border-gray-200 p-4 md:col-span-2 md:grid-cols-2 <?php echo ($fornecedorEdicao['tipoPessoa'] ?? '') === 'juridica' ? '' : 'hidden'; ?>">
+                        <legend class="px-2 text-sm font-semibold text-gray-700">2. Dados da empresa</legend>
+                        <label class="text-sm font-medium text-gray-700">Nome fantasia
+                            <input name="nomeFantasia" maxlength="150" value="<?php echo appEscape((string) ($fornecedorEdicao['nomeFantasia'] ?? '')); ?>" <?php echo ($fornecedorEdicao['tipoPessoa'] ?? '') === 'juridica' ? '' : 'disabled'; ?> class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        </label>
+                        <label class="text-sm font-medium text-gray-700">Pessoa de contato
+                            <input name="nomeContato" maxlength="150" value="<?php echo appEscape((string) ($fornecedorEdicao['nomeContato'] ?? '')); ?>" <?php echo ($fornecedorEdicao['tipoPessoa'] ?? '') === 'juridica' ? '' : 'disabled'; ?> class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        </label>
+                        <p class="text-xs text-gray-500 md:col-span-2">Nome fantasia e pessoa de contato são aplicáveis somente a pessoas jurídicas.</p>
+                    </fieldset>
+
+                    <fieldset class="grid gap-4 rounded-lg border border-gray-200 p-4 md:col-span-2 md:grid-cols-2">
+                        <legend class="px-2 text-sm font-semibold text-gray-700">3. Contato</legend>
+                        <label class="text-sm font-medium text-gray-700">E-mail
+                            <input type="email" name="email" maxlength="190" value="<?php echo appEscape((string) ($fornecedorEdicao['email'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        </label>
+                        <label class="text-sm font-medium text-gray-700">Telefone
+                            <input type="tel" name="telefone" data-finance-phone inputmode="tel" maxlength="20" value="<?php echo appEscape((string) ($fornecedorEdicao['telefone'] ?? '')); ?>" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                        </label>
+                    </fieldset>
+
+                    <fieldset class="grid gap-4 rounded-lg border border-gray-200 p-4 md:col-span-2 md:grid-cols-2">
+                        <legend class="px-2 text-sm font-semibold text-gray-700">4. Observações e controle</legend>
+                        <label class="text-sm font-medium text-gray-700 md:col-span-2">Observações
+                            <textarea name="observacoes" maxlength="255" rows="3" class="mt-1 w-full rounded border border-gray-300 px-3 py-2"><?php echo appEscape((string) ($fornecedorEdicao['observacoes'] ?? '')); ?></textarea>
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-gray-700">
+                            <input type="checkbox" name="statusFornecedor" value="1" <?php echo !isset($fornecedorEdicao['statusFornecedor']) || (int) $fornecedorEdicao['statusFornecedor'] === 1 ? 'checked' : ''; ?> class="rounded border-gray-300 text-elo-teal focus:ring-elo-teal">
+                            Cadastro ativo
+                        </label>
                         <label class="text-sm font-medium text-gray-700">Criado por
                             <input value="<?php echo appEscape($criadoPor); ?>" disabled class="mt-1 w-full cursor-not-allowed rounded border border-gray-200 bg-gray-100 px-3 py-2 text-gray-600">
                         </label>
                         <label class="text-sm font-medium text-gray-700">Alterado por
                             <input value="<?php echo appEscape($alteradoPor !== '' ? $alteradoPor : '—'); ?>" disabled class="mt-1 w-full cursor-not-allowed rounded border border-gray-200 bg-gray-100 px-3 py-2 text-gray-600">
                         </label>
-                    </div>
+                    </fieldset>
                     <div class="flex flex-wrap gap-2 md:col-span-2">
                         <button type="submit" class="inline-flex items-center gap-2 rounded bg-elo-teal px-4 py-2 font-medium text-white hover:bg-elo-green"><i class="ph ph-floppy-disk" aria-hidden="true"></i><?php echo !empty($fornecedorEdicao['idFornecedorPrestador']) ? 'Salvar alterações' : 'Cadastrar'; ?></button>
                         <?php if (!empty($fornecedorEdicao['idFornecedorPrestador'])): ?>
@@ -387,7 +401,7 @@ $abaInicial = ($fornecedorEdicao || ($erro !== '' && $_SERVER['REQUEST_METHOD'] 
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full min-w-[900px] text-left text-sm">
-                        <thead class="border-b bg-gray-50 text-gray-600"><tr><th class="p-3">Nome / Razão Social</th><th class="p-3">CPF/CNPJ</th><th class="p-3">Pessoa de contato</th><th class="p-3">E-mail</th><th class="p-3">Telefone</th><th class="p-3">Status</th><th class="p-3">Ações</th></tr></thead>
+                        <thead class="border-b bg-gray-50 text-gray-600"><tr><th class="p-3">Nome completo / Razão Social</th><th class="p-3">CPF/CNPJ</th><th class="p-3">Pessoa de contato</th><th class="p-3">E-mail</th><th class="p-3">Telefone</th><th class="p-3">Status</th><th class="p-3">Ações</th></tr></thead>
                         <tbody id="listaFornecedores">
                         <?php foreach ($fornecedores as $fornecedor): ?>
                             <tr class="border-b hover:bg-gray-50">

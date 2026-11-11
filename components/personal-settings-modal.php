@@ -90,11 +90,13 @@
                     <div class="grid gap-4 md:grid-cols-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700">CEP
-                                <input name="cep" inputmode="numeric" autocomplete="postal-code" maxlength="9" data-institution-cep value="<?php echo appEscape($institutionCep); ?>" placeholder="00000-000" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                                <span class="mt-1 flex gap-2">
+                                    <input name="cep" inputmode="numeric" autocomplete="postal-code" maxlength="9" data-institution-cep value="<?php echo appEscape($institutionCep); ?>" placeholder="00000-000" class="min-w-0 flex-1 rounded border border-gray-300 px-3 py-2">
+                                    <button type="button" data-cep-lookup class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded border border-elo-teal text-elo-teal transition-colors hover:bg-elo-teal/5 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Buscar endereço pelo CEP" title="Buscar endereço pelo CEP">
+                                        <i class="ph ph-magnifying-glass text-lg" aria-hidden="true"></i>
+                                    </button>
+                                </span>
                             </label>
-                            <button type="button" data-cep-lookup class="mt-2 rounded border border-elo-teal px-3 py-1.5 text-sm font-medium text-elo-teal hover:bg-elo-teal/5">
-                                Buscar CEP
-                            </button>
                             <p data-cep-message class="mt-1 text-xs text-gray-500" role="status" aria-live="polite">
                                 <?php echo $cepLockedFields !== [] ? 'Endereço preenchido pela consulta de CEP. Altere o CEP para liberar os campos.' : 'Digite o CEP para preencher o endereço automaticamente.'; ?>
                             </p>
