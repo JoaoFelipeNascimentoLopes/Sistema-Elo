@@ -401,6 +401,7 @@ if ($lancamentoEdicao === null && $idEdicao) {
         'SELECT l.idLancamento, l.dataLancamento, l.descricaoLancamento, l.valorLancamento,
                 l.statusLancamento, l.idCategoria, l.idFonte, l.idFormaPagamento,
                 l.idFornecedorPrestador, l.idDoadorContribuinte, l.observacoes,
+                l.criadoEm, l.atualizadoEm,
                 criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
                 alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
          FROM tbLancamentoFinanceiro l
@@ -511,9 +512,12 @@ $abaInicial = ($lancamentoEdicao || ($erro !== '' && $_SERVER['REQUEST_METHOD'] 
     : 'pesquisa';
 $criadoPor = isset($lancamentoEdicao['criadoPorId'])
     ? $lancamentoEdicao['criadoPorId'] . ' - ' . $lancamentoEdicao['criadoPor']
-    : (int) $usuarioAtual['idUsuario'] . ' - ' . $usuarioAtual['nomeCompleto'];
+        . ' - ' . date('d/m/Y H:i', strtotime((string) $lancamentoEdicao['criadoEm']))
+    : (int) $usuarioAtual['idUsuario'] . ' - ' . $usuarioAtual['nomeCompleto']
+        . ' - ' . date('d/m/Y H:i');
 $alteradoPor = !empty($lancamentoEdicao['alteradoPorId'])
     ? $lancamentoEdicao['alteradoPorId'] . ' - ' . $lancamentoEdicao['alteradoPor']
+        . ' - ' . date('d/m/Y H:i', strtotime((string) $lancamentoEdicao['atualizadoEm']))
     : '—';
 $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((float) $value, 2, ',', '.');
 ?>

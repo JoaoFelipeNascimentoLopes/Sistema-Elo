@@ -336,6 +336,7 @@ if ($doadorEdicao === null && $idEdicao) {
         'SELECT d.idDoadorContribuinte, d.tipoPessoa, d.documento, d.nomeRazaoSocial,
                 d.nomeFantasia, d.email, d.telefone, d.cep, d.logradouro, d.numero,
                 d.complemento, d.bairro, d.cidade, d.uf, d.observacoes, d.statusDoador,
+                d.criadoEm, d.atualizadoEm,
                 criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
                 alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
          FROM tbDoadorContribuinte d
@@ -352,7 +353,7 @@ if ($doadorEdicao === null && $idEdicao) {
 if ($doadorEdicao !== null && !isset($doadorEdicao['criadoPor'])) {
     if ((int) ($doadorEdicao['idDoadorContribuinte'] ?? 0) > 0) {
         $audit = $pdo->prepare(
-            'SELECT criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
+            'SELECT d.criadoEm, d.atualizadoEm, criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
                     alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
              FROM tbDoadorContribuinte d
              INNER JOIN tbUsuario criador ON criador.idUsuario = d.idUsuarioCriacao
@@ -369,9 +370,15 @@ if ($doadorEdicao !== null && !isset($doadorEdicao['criadoPor'])) {
     }
 }
 $criadoPorId = $doadorEdicao['criadoPorId'] ?? $usuarioAtual['idUsuario'];
-$criadoPor = $criadoPorId . ' - ' . (string) ($doadorEdicao['criadoPor'] ?? $usuarioAtual['nomeCompleto']);
+$criadoEm = (string) ($doadorEdicao['criadoEm'] ?? date('Y-m-d H:i:s'));
+$criadoPor = $criadoPorId . ' - ' . (string) ($doadorEdicao['criadoPor'] ?? $usuarioAtual['nomeCompleto'])
+    . ' - ' . date('d/m/Y H:i', strtotime($criadoEm));
 $alteradoPorId = $doadorEdicao['alteradoPorId'] ?? null;
-$alteradoPor = $alteradoPorId !== null ? $alteradoPorId . ' - ' . (string) ($doadorEdicao['alteradoPor'] ?? '') : '';
+$atualizadoEm = $doadorEdicao['atualizadoEm'] ?? null;
+$alteradoPor = $alteradoPorId !== null
+    ? $alteradoPorId . ' - ' . (string) ($doadorEdicao['alteradoPor'] ?? '')
+        . ' - ' . date('d/m/Y H:i', strtotime((string) $atualizadoEm))
+    : '';
 $doadores = $pdo->query(
     'SELECT idDoadorContribuinte, tipoPessoa, documento, nomeRazaoSocial, email, telefone,
             cidade, uf, statusDoador

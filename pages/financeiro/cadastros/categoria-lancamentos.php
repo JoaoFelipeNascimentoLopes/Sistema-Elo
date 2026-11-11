@@ -122,7 +122,7 @@ $idEdicao = filter_input(INPUT_GET, 'editar', FILTER_VALIDATE_INT);
 if ($categoriaEdicao === null && $idEdicao) {
     $statement = $pdo->prepare(
         'SELECT c.idCategoria, c.nomeCategoria, c.naturezaCategoria, c.descricaoCategoria,
-                c.statusCategoria, criador.idUsuario AS criadoPorId,
+                c.statusCategoria, c.criadoEm, c.atualizadoEm, criador.idUsuario AS criadoPorId,
                 criador.nomeCompleto AS criadoPor, alterador.idUsuario AS alteradoPorId,
                 alterador.nomeCompleto AS alteradoPor
          FROM tbCategoriaLancamentos c
@@ -140,7 +140,7 @@ if ($categoriaEdicao === null && $idEdicao) {
 if ($categoriaEdicao !== null && !isset($categoriaEdicao['criadoPor'])) {
     if ((int) ($categoriaEdicao['idCategoria'] ?? 0) > 0) {
         $auditStatement = $pdo->prepare(
-            'SELECT criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
+            'SELECT c.criadoEm, c.atualizadoEm, criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
                     alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
              FROM tbCategoriaLancamentos c
              INNER JOIN tbUsuario criador ON criador.idUsuario = c.idUsuarioCriacao
@@ -163,12 +163,16 @@ if ($categoriaEdicao !== null && !isset($categoriaEdicao['criadoPor'])) {
 
 $criadoPorId = $categoriaEdicao['criadoPorId'] ?? $usuarioAtual['idUsuario'];
 $criadoPorNome = (string) ($categoriaEdicao['criadoPor'] ?? $usuarioAtual['nomeCompleto']);
-$criadoPor = $criadoPorId !== null ? $criadoPorId . ' - ' . $criadoPorNome : $criadoPorNome;
+$criadoEm = (string) ($categoriaEdicao['criadoEm'] ?? date('Y-m-d H:i:s'));
+$criadoPor = $criadoPorId !== null
+    ? $criadoPorId . ' - ' . $criadoPorNome . ' - ' . date('d/m/Y H:i', strtotime($criadoEm))
+    : '—';
 $alteradoPorId = $categoriaEdicao['alteradoPorId'] ?? null;
 $alteradoPorNome = (string) ($categoriaEdicao['alteradoPor'] ?? '');
+$atualizadoEm = $categoriaEdicao['atualizadoEm'] ?? null;
 $alteradoPor = $alteradoPorId !== null
-    ? $alteradoPorId . ' - ' . $alteradoPorNome
-    : $alteradoPorNome;
+    ? $alteradoPorId . ' - ' . $alteradoPorNome . ' - ' . date('d/m/Y H:i', strtotime((string) $atualizadoEm))
+    : '';
 
 $categorias = $pdo->query(
     'SELECT c.idCategoria, c.nomeCategoria, c.naturezaCategoria, c.descricaoCategoria,

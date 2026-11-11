@@ -215,8 +215,13 @@ $idEdicaoInput = $_GET['editar'] ?? null;
 $idEdicao = is_scalar($idEdicaoInput) ? filter_var($idEdicaoInput, FILTER_VALIDATE_INT) : false;
 if ($metaEdicao === null && $idEdicao) {
     $statement = $pdo->prepare(
-        'SELECT idMetaOrcamentaria, ano, mes, valorOrcado
-         FROM tbMetaOrcamentaria WHERE idMetaOrcamentaria = :id'
+        'SELECT m.idMetaOrcamentaria, m.ano, m.mes, m.valorOrcado, m.criadoEm, m.atualizadoEm,
+                criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
+                alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
+         FROM tbMetaOrcamentaria m
+         INNER JOIN tbUsuario criador ON criador.idUsuario = m.idUsuarioCriacao
+         LEFT JOIN tbUsuario alterador ON alterador.idUsuario = m.idUsuarioAlteracao
+         WHERE m.idMetaOrcamentaria = :id'
     );
     $statement->execute(['id' => $idEdicao]);
     $metaEdicao = $statement->fetch(PDO::FETCH_ASSOC) ?: null;
@@ -268,6 +273,14 @@ $resultado = $resultados[(string) ($_GET['resultado'] ?? '')] ?? '';
 $abaInicial = ($metaEdicao || ($erro !== '' && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'salvar'))
     ? 'manutencao'
     : 'pesquisa';
+$criadoPor = isset($metaEdicao['criadoPorId'])
+    ? $metaEdicao['criadoPorId'] . ' - ' . $metaEdicao['criadoPor']
+        . ' - ' . date('d/m/Y H:i', strtotime((string) $metaEdicao['criadoEm']))
+    : (int) $usuarioAtual['idUsuario'] . ' - ' . $usuarioAtual['nomeCompleto'] . ' - ' . date('d/m/Y H:i');
+$alteradoPor = !empty($metaEdicao['alteradoPorId'])
+    ? $metaEdicao['alteradoPorId'] . ' - ' . $metaEdicao['alteradoPor']
+        . ' - ' . date('d/m/Y H:i', strtotime((string) $metaEdicao['atualizadoEm']))
+    : '—';
 $years = range(max(2000, (int) date('Y') - 10), (int) date('Y') + 5);
 $knownYears = $pdo->query('SELECT DISTINCT ano FROM tbMetaOrcamentaria ORDER BY ano')->fetchAll(PDO::FETCH_COLUMN);
 $years = array_unique(array_map('intval', array_merge($years, $knownYears, [$selectedYear])));
@@ -329,6 +342,14 @@ if (isset($metaEdicao['valorOrcado'])) {
                         <input name="valorOrcado" data-money-input inputmode="decimal" autocomplete="off" required maxlength="18" value="<?php echo appEscape($formattedInputGoal); ?>" placeholder="0,00" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
                         <span class="mt-1 block text-xs font-normal text-gray-500">Este valor é apenas informativo e não impede o registro de despesas.</span>
                     </label>
+                    <div class="grid gap-4 md:grid-cols-2 md:col-span-2">
+                        <label class="text-sm font-medium text-gray-700">Criado por
+                            <input type="text" value="<?php echo appEscape($criadoPor); ?>" disabled class="mt-1 w-full cursor-not-allowed rounded border border-gray-200 bg-gray-100 px-3 py-2 text-gray-600">
+                        </label>
+                        <label class="text-sm font-medium text-gray-700">Alterado por
+                            <input type="text" value="<?php echo appEscape($alteradoPor); ?>" disabled class="mt-1 w-full cursor-not-allowed rounded border border-gray-200 bg-gray-100 px-3 py-2 text-gray-600">
+                        </label>
+                    </div>
                     <div class="flex flex-wrap gap-2 md:col-span-2">
                         <button type="submit" class="inline-flex items-center gap-2 rounded bg-elo-teal px-4 py-2 font-medium text-white hover:bg-elo-green"><i class="ph ph-floppy-disk" aria-hidden="true"></i><?php echo !empty($metaEdicao['idMetaOrcamentaria']) ? 'Salvar alterações' : 'Salvar orçamento do mês'; ?></button>
                         <?php if (!empty($metaEdicao['idMetaOrcamentaria'])): ?><a href="metas-orcamentarias.php?ano=<?php echo $selectedYear; ?>&modo=<?php echo appEscape($mode); ?>#pesquisa" class="inline-flex items-center gap-2 rounded border px-4 py-2 text-gray-700 hover:bg-gray-50">Cancelar</a><?php endif; ?>

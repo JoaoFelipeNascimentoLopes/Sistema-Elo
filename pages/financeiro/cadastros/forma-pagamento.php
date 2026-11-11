@@ -124,7 +124,7 @@ $idEdicao = filter_input(INPUT_GET, 'editar', FILTER_VALIDATE_INT);
 if ($formaEdicao === null && $idEdicao) {
     $statement = $pdo->prepare(
         'SELECT f.idFormaPagamento, f.nomeFormaPagamento, f.descricaoFormaPagamento,
-                f.statusFormaPagamento, criador.idUsuario AS criadoPorId,
+                f.statusFormaPagamento, f.criadoEm, f.atualizadoEm, criador.idUsuario AS criadoPorId,
                 criador.nomeCompleto AS criadoPor, alterador.idUsuario AS alteradoPorId,
                 alterador.nomeCompleto AS alteradoPor
          FROM tbFormaPagamento f
@@ -142,7 +142,7 @@ if ($formaEdicao === null && $idEdicao) {
 if ($formaEdicao !== null && !isset($formaEdicao['criadoPor'])) {
     if ((int) ($formaEdicao['idFormaPagamento'] ?? 0) > 0) {
         $auditStatement = $pdo->prepare(
-            'SELECT criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
+            'SELECT f.criadoEm, f.atualizadoEm, criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
                     alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
              FROM tbFormaPagamento f
              INNER JOIN tbUsuario criador ON criador.idUsuario = f.idUsuarioCriacao
@@ -165,10 +165,16 @@ if ($formaEdicao !== null && !isset($formaEdicao['criadoPor'])) {
 
 $criadoPorId = $formaEdicao['criadoPorId'] ?? $usuarioAtual['idUsuario'];
 $criadoPorNome = (string) ($formaEdicao['criadoPor'] ?? $usuarioAtual['nomeCompleto']);
-$criadoPor = $criadoPorId !== null ? $criadoPorId . ' - ' . $criadoPorNome : $criadoPorNome;
+$criadoEm = (string) ($formaEdicao['criadoEm'] ?? date('Y-m-d H:i:s'));
+$criadoPor = $criadoPorId !== null
+    ? $criadoPorId . ' - ' . $criadoPorNome . ' - ' . date('d/m/Y H:i', strtotime($criadoEm))
+    : '—';
 $alteradoPorId = $formaEdicao['alteradoPorId'] ?? null;
 $alteradoPorNome = (string) ($formaEdicao['alteradoPor'] ?? '');
-$alteradoPor = $alteradoPorId !== null ? $alteradoPorId . ' - ' . $alteradoPorNome : $alteradoPorNome;
+$atualizadoEm = $formaEdicao['atualizadoEm'] ?? null;
+$alteradoPor = $alteradoPorId !== null
+    ? $alteradoPorId . ' - ' . $alteradoPorNome . ' - ' . date('d/m/Y H:i', strtotime((string) $atualizadoEm))
+    : '';
 
 $formasPagamento = $pdo->query(
     'SELECT idFormaPagamento, nomeFormaPagamento, descricaoFormaPagamento, statusFormaPagamento

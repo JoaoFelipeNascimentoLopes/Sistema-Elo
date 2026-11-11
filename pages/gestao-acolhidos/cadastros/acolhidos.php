@@ -34,6 +34,18 @@ $validarData = static function (string $data): bool {
     $date = DateTimeImmutable::createFromFormat('!Y-m-d', $data);
     return $date !== false && $date->format('Y-m-d') === $data;
 };
+$formatarAuditoria = static function ($idUsuario, $nomeUsuario, $dataHora): string {
+    if ($idUsuario === null || $nomeUsuario === null || $dataHora === null) {
+        return '—';
+    }
+
+    $timestamp = strtotime((string) $dataHora);
+    if ($timestamp === false) {
+        return '—';
+    }
+
+    return (int) $idUsuario . ' - ' . (string) $nomeUsuario . ' - ' . date('d/m/Y H:i', $timestamp);
+};
 $validarCpf = static function (string $cpf): bool {
     if (!preg_match('/^\d{11}$/', $cpf) || preg_match('/^(\d)\1{10}$/', $cpf)) {
         return false;
@@ -292,6 +304,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'relevanciasClinicas' => $relevanciasJson,
                 'dataRegistro' => $dataRegistro,
             ];
+            $pdo->beginTransaction();
+            $acolhidoEmEdicaoStatement = $pdo->prepare(
+                'SELECT idAcolhido FROM tbAcolhido WHERE idAcolhido = :id FOR UPDATE'
+            );
+            $acolhidoEmEdicaoStatement->execute(['id' => $idEdicao]);
+            if (!$acolhidoEmEdicaoStatement->fetchColumn()) {
+                throw new InvalidArgumentException('O cadastro do acolhido precisa existir antes de registrar a ficha médica.');
+            }
+            $atualizarTipoSanguineo = $pdo->prepare(
+                'UPDATE tbFichaMedica
+                 SET tipoSanguineo = :tipoSanguineo,
+                     idUsuarioAlteracao = :idUsuarioAlteracao
+                 WHERE idAcolhido = :idAcolhido
+                   AND tipoSanguineo <> :tipoSanguineoComparacao'
+            );
+            $atualizarTipoSanguineo->execute([
+                'tipoSanguineo' => $tipoSanguineo,
+                'idUsuarioAlteracao' => (int) $usuarioAtual['idUsuario'],
+                'idAcolhido' => $idAcolhidoInput,
+                'tipoSanguineoComparacao' => $tipoSanguineo,
+            ]);
             $statement = $pdo->prepare(
                 'INSERT INTO tbFichaMedica
                     (idAcolhido, tipoSanguineo, alergias, dependencias, relevanciasClinicas,
@@ -301,8 +334,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      :dataRegistro, :idUsuarioCriacao)'
             );
             $statement->execute($valoresFicha + ['idUsuarioCriacao' => (int) $usuarioAtual['idUsuario']]);
+            $pdo->commit();
             header('Location: ' . appTabUrl(
-                'acolhidos.php?resultado=ficha-criada&editar=' . $idEdicao . '&subaba=fichas-medicas#manutencao'
+                 'acolhidos.php?resultado=ficha-criada&editar=' . $idEdicao . '&subaba=fichas-medicas#manutencao'
             ));
             exit;
         }
@@ -327,6 +361,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         throw new InvalidArgumentException('Ação inválida.');
     } catch (InvalidArgumentException $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         $erro = $exception->getMessage();
         if ($acao === 'salvarAcolhido') {
             $formAcolhidoFoiEnviado = true;
@@ -340,6 +377,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $formFichaFoiEnviado = true;
         }
     } catch (PDOException $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         error_log('Falha no cadastro de acolhido/ficha médica: ' . $exception->getMessage());
         $erro = (int) ($exception->errorInfo[1] ?? 0) === 1062
             ? 'Já existe um acolhido cadastrado com este CPF.'
@@ -358,6 +398,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $formFichaFoiEnviado = true;
         }
     } catch (RuntimeException $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         $erro = $exception->getMessage();
         if ($acao === 'salvarAcolhido') {
             $formAcolhidoFoiEnviado = true;
@@ -372,8 +415,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if ($idEdicao !== false && $idEdicao > 0) {
     $statement = $pdo->prepare(
-        'SELECT a.*, criador.nomeCompleto AS criadoPor,
-                alterador.nomeCompleto AS alteradoPor
+        'SELECT a.*, criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
+                alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
          FROM tbAcolhido a
          INNER JOIN tbUsuario criador ON criador.idUsuario = a.idUsuarioCriacao
          LEFT JOIN tbUsuario alterador ON alterador.idUsuario = a.idUsuarioAlteracao
@@ -385,6 +428,10 @@ if ($idEdicao !== false && $idEdicao > 0) {
         $podeGerenciarFicha = true;
         if (!$formAcolhidoFoiEnviado) {
             $dadosAcolhido = $registro;
+        } else {
+            foreach (['idUsuarioCriacao', 'idUsuarioAlteracao', 'criadoEm', 'atualizadoEm', 'criadoPorId', 'criadoPor', 'alteradoPorId', 'alteradoPor'] as $campoAuditoria) {
+                $dadosAcolhido[$campoAuditoria] = $registro[$campoAuditoria] ?? null;
+            }
         }
     } else {
         $erro = 'Acolhido não encontrado.';
@@ -429,9 +476,8 @@ if ($pesquisa !== '') {
     }
 }
 $acolhidosStatement = $pdo->prepare(
-    'SELECT a.idAcolhido, a.nomeCompleto, a.cpf, a.dataNascimento, a.sexo,
-            a.caminhoFoto, a.moradorRua, a.cidade, a.uf,
-            (SELECT COUNT(*) FROM tbFichaMedica fm WHERE fm.idAcolhido = a.idAcolhido) AS totalFichas
+    'SELECT a.idAcolhido, a.nomeCompleto, a.nomeMae, a.dataNascimento,
+            a.caminhoFoto, a.cidade, a.uf
      FROM tbAcolhido a ' . $whereAcolhidos . '
      ORDER BY a.nomeCompleto, a.idAcolhido
      LIMIT 100'
@@ -442,15 +488,31 @@ $fichas = [];
 if ($podeGerenciarFicha) {
     $fichasStatement = $pdo->prepare(
         'SELECT f.idFichaMedica, f.idAcolhido, f.tipoSanguineo, f.alergias,
-            f.dependencias, f.relevanciasClinicas, f.dataRegistro, a.nomeCompleto
+            f.dependencias, f.relevanciasClinicas, f.dataRegistro, f.idUsuarioCriacao,
+            f.idUsuarioAlteracao, f.criadoEm, f.atualizadoEm, a.nomeCompleto,
+            criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
+            alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
      FROM tbFichaMedica f
      INNER JOIN tbAcolhido a ON a.idAcolhido = f.idAcolhido
+     INNER JOIN tbUsuario criador ON criador.idUsuario = f.idUsuarioCriacao
+     LEFT JOIN tbUsuario alterador ON alterador.idUsuario = f.idUsuarioAlteracao
      WHERE f.idAcolhido = :idAcolhido
      ORDER BY f.dataRegistro DESC, f.idFichaMedica DESC
      LIMIT 100'
     );
     $fichasStatement->execute(['idAcolhido' => $idEdicao]);
     $fichas = $fichasStatement->fetchAll(PDO::FETCH_ASSOC);
+    $tipoSanguineoStatement = $pdo->prepare(
+        'SELECT tipoSanguineo FROM tbFichaMedica
+         WHERE idAcolhido = :idAcolhido
+         ORDER BY criadoEm DESC, idFichaMedica DESC
+         LIMIT 1'
+    );
+    $tipoSanguineoStatement->execute(['idAcolhido' => $idEdicao]);
+    $tipoSanguineoAtual = $tipoSanguineoStatement->fetchColumn();
+    if (!$formFichaFoiEnviado && is_string($tipoSanguineoAtual)) {
+        $dadosFicha['tipoSanguineo'] = $tipoSanguineoAtual;
+    }
     if ((int) $dadosFicha['idAcolhido'] === 0) {
         $dadosFicha['idAcolhido'] = $idEdicao;
     }
@@ -684,6 +746,17 @@ $mensagensResultado = [
                                 </div>
                             </fieldset>
 
+                            <?php if ((int) ($dadosAcolhido['idAcolhido'] ?? 0) > 0): ?>
+                                <div class="grid gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm md:grid-cols-2">
+                                    <label class="font-medium text-gray-700">Criado por
+                                        <input type="text" value="<?php echo appEscape($formatarAuditoria($dadosAcolhido['criadoPorId'] ?? null, $dadosAcolhido['criadoPor'] ?? null, $dadosAcolhido['criadoEm'] ?? null)); ?>" disabled class="mt-1 w-full cursor-not-allowed rounded border border-gray-200 bg-white px-3 py-2 text-gray-600">
+                                    </label>
+                                    <label class="font-medium text-gray-700">Alterado por
+                                        <input type="text" value="<?php echo appEscape($formatarAuditoria($dadosAcolhido['alteradoPorId'] ?? null, $dadosAcolhido['alteradoPor'] ?? null, $dadosAcolhido['atualizadoEm'] ?? null)); ?>" disabled class="mt-1 w-full cursor-not-allowed rounded border border-gray-200 bg-white px-3 py-2 text-gray-600">
+                                    </label>
+                                </div>
+                            <?php endif; ?>
+
                             <div class="flex flex-wrap justify-end gap-2">
                                 <a href="<?php echo appEscape($urlAtual . '?subaba=acolhidos#manutencao'); ?>" class="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Limpar</a>
                                 <button type="submit" class="inline-flex items-center gap-2 rounded bg-elo-teal px-5 py-2 text-sm font-semibold text-white hover:bg-elo-green">
@@ -724,6 +797,7 @@ $mensagensResultado = [
                                             <option value="<?php echo appEscape($tipo); ?>" <?php echo $dadosFicha['tipoSanguineo'] === $tipo ? 'selected' : ''; ?>><?php echo appEscape($tipo); ?></option>
                                         <?php endforeach; ?>
                                     </select>
+                                    <span class="mt-1 block text-xs font-normal text-gray-500">O tipo sanguíneo é compartilhado por todas as fichas deste acolhido.</span>
                                 </label>
                             </div>
                             <?php
@@ -758,7 +832,7 @@ $mensagensResultado = [
                             <h2 class="text-lg font-semibold text-gray-900">Histórico de fichas médicas</h2>
                         </div>
                         <div class="overflow-x-auto">
-                            <table class="w-full min-w-[800px] border-collapse text-left text-sm">
+                            <table class="w-full min-w-[1100px] border-collapse text-left text-sm">
                                 <thead>
                                     <tr class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                                         <th class="border-y border-gray-200 px-3 py-3">Registro</th>
@@ -766,6 +840,7 @@ $mensagensResultado = [
                                         <th class="border-y border-gray-200 px-3 py-3">Tipo sanguíneo</th>
                                         <th class="border-y border-gray-200 px-3 py-3">Alergias</th>
                                         <th class="border-y border-gray-200 px-3 py-3">Dependências</th>
+                                        <th class="border-y border-gray-200 px-3 py-3">Auditoria</th>
                                         <th class="border-y border-gray-200 px-3 py-3 text-right">Ações</th>
                                     </tr>
                                 </thead>
@@ -792,6 +867,10 @@ $mensagensResultado = [
                                             <td class="px-3 py-3 text-gray-600"><?php echo appEscape($ficha['tipoSanguineo']); ?></td>
                                             <td class="max-w-48 px-3 py-3 text-gray-600"><?php echo appEscape($tagsResumo['alergias'] ?: '—'); ?></td>
                                             <td class="max-w-48 px-3 py-3 text-gray-600"><?php echo appEscape($tagsResumo['dependencias'] ?: '—'); ?></td>
+                                            <td class="min-w-72 px-3 py-3 text-xs text-gray-600">
+                                                <p><span class="font-medium text-gray-700">Criado:</span> <?php echo appEscape($formatarAuditoria($ficha['criadoPorId'] ?? null, $ficha['criadoPor'] ?? null, $ficha['criadoEm'] ?? null)); ?></p>
+                                                <p class="mt-1"><span class="font-medium text-gray-700">Alterado:</span> <?php echo appEscape($formatarAuditoria($ficha['alteradoPorId'] ?? null, $ficha['alteradoPor'] ?? null, $ficha['atualizadoEm'] ?? null)); ?></p>
+                                            </td>
                                             <td class="px-3 py-3">
                                                 <div class="flex justify-end gap-2">
                                                     <button type="button" data-medical-details data-name="<?php echo appEscape($ficha['nomeCompleto']); ?>" data-date="<?php echo appEscape(date('d/m/Y', strtotime($ficha['dataRegistro']))); ?>" data-blood="<?php echo appEscape($ficha['tipoSanguineo']); ?>" data-allergies="<?php echo appEscape($tagsResumo['alergias']); ?>" data-dependencies="<?php echo appEscape($tagsResumo['dependencias']); ?>" data-relevance="<?php echo appEscape($tagsResumo['relevanciasClinicas']); ?>" class="inline-flex h-9 w-9 items-center justify-center rounded border border-gray-200 text-indigo-600 hover:bg-indigo-50" aria-label="Ver ficha médica"><i class="ph ph-eye text-lg" aria-hidden="true"></i></button>
@@ -801,7 +880,7 @@ $mensagensResultado = [
                                         </tr>
                                     <?php endforeach; ?>
                                     <?php if (!$fichas): ?>
-                                        <tr><td colspan="6" class="px-3 py-10 text-center text-gray-500">Nenhuma ficha médica registrada.</td></tr>
+                                        <tr><td colspan="7" class="px-3 py-10 text-center text-gray-500">Nenhuma ficha médica registrada.</td></tr>
                                     <?php endif; ?>
                                 </tbody>
                             </table>
@@ -820,14 +899,13 @@ $mensagensResultado = [
                             </div>
                         </div>
                         <div class="overflow-x-auto">
-                            <table class="w-full min-w-[780px] text-left text-sm">
+                            <table class="w-full min-w-[900px] text-left text-sm">
                                 <thead>
                                     <tr class="border-b bg-gray-50 text-gray-600">
-                                        <th class="p-3">Nome completo</th>
-                                        <th class="p-3">CPF</th>
+                                        <th class="p-3">Acolhido</th>
+                                        <th class="p-3">Nome da mãe</th>
                                         <th class="p-3">Nascimento</th>
                                         <th class="p-3">Cidade/UF</th>
-                                        <th class="p-3">Fichas médicas</th>
                                         <th class="p-3">Ações</th>
                                     </tr>
                                 </thead>
@@ -842,13 +920,12 @@ $mensagensResultado = [
                                                     <?php else: ?>
                                                         <span class="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-400"><i class="ph ph-user text-xl" aria-hidden="true"></i></span>
                                                     <?php endif; ?>
-                                                    <div><p><?php echo appEscape($acolhido['nomeCompleto']); ?></p><p class="text-xs font-normal text-gray-500">ID <?php echo (int) $acolhido['idAcolhido']; ?> · <?php echo appEscape($acolhido['sexo']); ?></p></div>
+                                                    <div><p><?php echo appEscape($acolhido['nomeCompleto']); ?></p><p class="text-xs font-normal text-gray-500">Cadastro #<?php echo (int) $acolhido['idAcolhido']; ?></p></div>
                                                 </div>
                                             </td>
-                                            <td class="p-3"><?php echo appEscape((string) ($acolhido['cpf'] ?: '')); ?></td>
-                                            <td class="whitespace-nowrap p-3"><?php echo appEscape(date('d/m/Y', strtotime($acolhido['dataNascimento']))); ?></td>
-                                            <td class="p-3"><?php echo !empty($acolhido['moradorRua']) ? 'Situação de rua' : appEscape(trim((string) ($acolhido['cidade'] ?? '') . (!empty($acolhido['uf']) ? '/' . $acolhido['uf'] : ''), '/') ?: ''); ?></td>
-                                            <td class="p-3"><?php echo (int) $acolhido['totalFichas']; ?></td>
+                                            <td class="p-3"><?php echo appEscape((string) ($acolhido['nomeMae'] ?: '—')); ?></td>
+                                            <td class="whitespace-nowrap p-3"><?php echo appEscape(date('d/m/Y', strtotime((string) $acolhido['dataNascimento']))); ?></td>
+                                            <td class="p-3"><?php echo appEscape(trim((string) ($acolhido['cidade'] ?? '') . (!empty($acolhido['uf']) ? '/' . $acolhido['uf'] : ''), '/') ?: '—'); ?></td>
                                             <td class="whitespace-nowrap p-3"><div class="flex items-center gap-3">
                                                     <a href="<?php echo appEscape(appTabUrl($urlAtual . '?editar=' . (int) $acolhido['idAcolhido'] . '&subaba=acolhidos#manutencao')); ?>" class="inline-flex h-9 w-9 items-center justify-center rounded border border-gray-200 text-elo-teal hover:bg-elo-teal/5" aria-label="Editar acolhido"><i class="ph ph-pencil-simple text-lg" aria-hidden="true"></i></a>
                                                     <form method="post" data-confirm="Excluir este cadastro? A exclusão será bloqueada se houver fichas médicas vinculadas.">
@@ -861,7 +938,7 @@ $mensagensResultado = [
                                         </tr>
                                     <?php endforeach; ?>
                                     <?php if (!$acolhidos): ?>
-                                        <tr><td colspan="6" class="px-3 py-10 text-center text-gray-500"><?php echo $pesquisa !== '' ? 'Nenhum acolhido encontrado.' : 'Ainda não há acolhidos cadastrados.'; ?></td></tr>
+                                        <tr><td colspan="5" class="px-3 py-10 text-center text-gray-500"><?php echo $pesquisa !== '' ? 'Nenhum acolhido encontrado.' : 'Ainda não há acolhidos cadastrados.'; ?></td></tr>
                                     <?php endif; ?>
                                 </tbody>
                             </table>

@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $idEdicao = filter_input(INPUT_GET, 'editar', FILTER_VALIDATE_INT);
 if ($fonteEdicao === null && $idEdicao) {
     $statement = $pdo->prepare(
-        'SELECT f.idFonte, f.nomeFonte, f.descricaoFonte, f.statusFonte,
+        'SELECT f.idFonte, f.nomeFonte, f.descricaoFonte, f.statusFonte, f.criadoEm, f.atualizadoEm,
                 criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
                 alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
          FROM tbFonteRecurso f
@@ -131,7 +131,7 @@ if ($fonteEdicao === null && $idEdicao) {
 if ($fonteEdicao !== null && !isset($fonteEdicao['criadoPor'])) {
     if ((int) ($fonteEdicao['idFonte'] ?? 0) > 0) {
         $auditStatement = $pdo->prepare(
-            'SELECT criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
+            'SELECT f.criadoEm, f.atualizadoEm, criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
                     alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
              FROM tbFonteRecurso f
              INNER JOIN tbUsuario criador ON criador.idUsuario = f.idUsuarioCriacao
@@ -154,12 +154,16 @@ if ($fonteEdicao !== null && !isset($fonteEdicao['criadoPor'])) {
 
 $criadoPorId = $fonteEdicao['criadoPorId'] ?? $usuarioAtual['idUsuario'];
 $criadoPorNome = (string) ($fonteEdicao['criadoPor'] ?? $usuarioAtual['nomeCompleto']);
-$criadoPor = $criadoPorId !== null ? $criadoPorId . ' - ' . $criadoPorNome : $criadoPorNome;
+$criadoEm = (string) ($fonteEdicao['criadoEm'] ?? date('Y-m-d H:i:s'));
+$criadoPor = $criadoPorId !== null
+    ? $criadoPorId . ' - ' . $criadoPorNome . ' - ' . date('d/m/Y H:i', strtotime($criadoEm))
+    : '—';
 $alteradoPorId = $fonteEdicao['alteradoPorId'] ?? null;
 $alteradoPorNome = (string) ($fonteEdicao['alteradoPor'] ?? '');
+$atualizadoEm = $fonteEdicao['atualizadoEm'] ?? null;
 $alteradoPor = $alteradoPorId !== null
-    ? $alteradoPorId . ' - ' . $alteradoPorNome
-    : $alteradoPorNome;
+    ? $alteradoPorId . ' - ' . $alteradoPorNome . ' - ' . date('d/m/Y H:i', strtotime((string) $atualizadoEm))
+    : '';
 
 $fontes = $pdo->query(
     'SELECT idFonte, nomeFonte, descricaoFonte, statusFonte

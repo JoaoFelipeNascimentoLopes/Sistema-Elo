@@ -245,7 +245,8 @@ if ($fornecedorEdicao === null && $idEdicao) {
     $statement = $pdo->prepare(
         'SELECT f.idFornecedorPrestador, f.tipoPessoa, f.documento, f.nomeRazaoSocial,
                f.nomeFantasia, f.nomeContato, f.email, f.telefone, f.observacoes,
-               f.statusFornecedor, criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
+               f.statusFornecedor, f.criadoEm, f.atualizadoEm,
+               criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
                 alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
          FROM tbFornecedorPrestador f
          INNER JOIN tbUsuario criador ON criador.idUsuario = f.idUsuarioCriacao
@@ -262,7 +263,7 @@ if ($fornecedorEdicao === null && $idEdicao) {
 if ($fornecedorEdicao !== null && !isset($fornecedorEdicao['criadoPor'])) {
     if ((int) ($fornecedorEdicao['idFornecedorPrestador'] ?? 0) > 0) {
         $audit = $pdo->prepare(
-            'SELECT criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
+            'SELECT f.criadoEm, f.atualizadoEm, criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
                     alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
              FROM tbFornecedorPrestador f
              INNER JOIN tbUsuario criador ON criador.idUsuario = f.idUsuarioCriacao
@@ -280,10 +281,13 @@ if ($fornecedorEdicao !== null && !isset($fornecedorEdicao['criadoPor'])) {
 }
 $criadoPorId = $fornecedorEdicao['criadoPorId'] ?? $usuarioAtual['idUsuario'];
 $criadoPorNome = (string) ($fornecedorEdicao['criadoPor'] ?? $usuarioAtual['nomeCompleto']);
-$criadoPor = $criadoPorId . ' - ' . $criadoPorNome;
+$criadoEm = (string) ($fornecedorEdicao['criadoEm'] ?? date('Y-m-d H:i:s'));
+$criadoPor = $criadoPorId . ' - ' . $criadoPorNome . ' - ' . date('d/m/Y H:i', strtotime($criadoEm));
 $alteradoPorId = $fornecedorEdicao['alteradoPorId'] ?? null;
+$atualizadoEm = $fornecedorEdicao['atualizadoEm'] ?? null;
 $alteradoPor = $alteradoPorId !== null
     ? $alteradoPorId . ' - ' . (string) ($fornecedorEdicao['alteradoPor'] ?? '')
+        . ' - ' . date('d/m/Y H:i', strtotime((string) $atualizadoEm))
     : '';
 $fornecedores = $pdo->query(
     'SELECT idFornecedorPrestador, tipoPessoa, documento, nomeRazaoSocial, nomeFantasia,
