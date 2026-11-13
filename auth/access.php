@@ -127,7 +127,12 @@ function appPageCatalog(): array
         'geral/relatorios/usuarios-por-perfis.php' => 'Usuários por Perfis',
         // Gestão de Acolhidos
         'gestao-acolhidos/dashboard-gestao-acolhidos.php' => 'Dashboard Gestão de Acolhidos',
-        'gestao-acolhidos/cadastros/acolhidos.php' => 'Cadastro de Acolhidos',
+        'gestao-acolhidos/cadastros/acolhidos.php' => 'Acolhidos',
+        'gestao-acolhidos/cadastros/blocos.php' => 'Blocos',
+        'gestao-acolhidos/cadastros/quartos.php' => 'Quartos',
+        'gestao-acolhidos/cadastros/leitos.php' => 'Leitos',
+        'gestao-acolhidos/movimentacoes/acolhimento.php' => 'Acolhimentos',
+        'gestao-acolhidos/movimentacoes/acomodacoes-acolhidos.php' => 'Acomodações dos Acolhidos',
     ];
     $legacyPageKeys = [
         // Financeiro

@@ -920,7 +920,7 @@ $mensagensResultado = [
                                                     <?php else: ?>
                                                         <span class="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-400"><i class="ph ph-user text-xl" aria-hidden="true"></i></span>
                                                     <?php endif; ?>
-                                                    <div><p><?php echo appEscape($acolhido['nomeCompleto']); ?></p><p class="text-xs font-normal text-gray-500">Cadastro #<?php echo (int) $acolhido['idAcolhido']; ?></p></div>
+                                                    <div><p><?php echo (int) $acolhido['idAcolhido']; ?> — <?php echo appEscape($acolhido['nomeCompleto']); ?></p><p class="text-xs font-normal text-gray-500"></p></div>
                                                 </div>
                                             </td>
                                             <td class="p-3"><?php echo appEscape((string) ($acolhido['nomeMae'] ?: '—')); ?></td>

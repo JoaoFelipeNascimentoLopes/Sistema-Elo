@@ -104,7 +104,7 @@ $baseUrl = appBaseUrl();
     <style>
         @page { size: A4 landscape; margin: 8mm; }
         @media print {
-            html, body { width: 100%; min-height: 0; margin: 0 !important; padding: 0 !important; background: white !important; color: #111827 !important; font: 8pt Arial, sans-serif !important; }
+            html, body { width: 100%; height: auto !important; min-height: 0; margin: 0 !important; padding: 0 !important; overflow: visible !important; background: white !important; color: #111827 !important; font: 8pt Arial, sans-serif !important; }
             body > nav, body > div > aside, .no-print, .fixed { display: none !important; }
             body > div { display: block !important; min-height: 0 !important; overflow: visible !important; }
             main { display: block !important; width: 100% !important; min-width: 0 !important; height: auto !important; overflow: visible !important; padding: 0 !important; }
@@ -134,11 +134,11 @@ $baseUrl = appBaseUrl();
         }
     </style>
 </head>
-<body class="min-h-screen bg-gray-100 font-sans text-gray-800">
+<body class="flex h-screen flex-col overflow-hidden bg-gray-100 font-sans text-gray-800">
     <?php include __DIR__ . '/../../../components/financeiro/navbar-financeiro.php'; ?>
-    <div class="flex min-h-[calc(100vh-4rem)]">
+    <div class="flex min-h-0 flex-1 overflow-hidden">
         <?php include __DIR__ . '/../../../components/financeiro/sidebar-financeiro.php'; ?>
-        <main class="min-w-0 flex-1 overflow-y-auto p-4 md:p-6">
+        <main class="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-6">
             <header class="no-print mb-5 flex flex-wrap items-end justify-between gap-3">
                 <div>
                     <h1 class="text-2xl font-bold text-gray-800">Extrato de Lançamentos</h1>

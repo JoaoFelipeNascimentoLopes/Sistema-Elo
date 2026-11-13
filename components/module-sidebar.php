@@ -30,7 +30,7 @@ $sidebarId = 'sidebar-' . $sidebarModuleKey;
 $searchId = 'pesquisa-telas-' . $sidebarModuleKey;
 $emptyId = 'pesquisa-vazia-' . $sidebarModuleKey;
 ?>
-<aside id="<?php echo appEscape($sidebarId); ?>" data-sidebar class="flex h-[calc(100vh-3.5rem)] w-72 flex-col border-r border-gray-300 bg-white shadow-sm">
+<aside id="<?php echo appEscape($sidebarId); ?>" data-sidebar class="flex h-full min-h-0 w-72 shrink-0 flex-col border-r border-gray-300 bg-white shadow-sm">
     <div class="flex items-center justify-between border-b border-gray-300 bg-gray-200/60 px-3 py-2">
         <span class="text-sm font-semibold text-gray-800">Navegação</span>
     </div>
@@ -43,7 +43,7 @@ $emptyId = 'pesquisa-vazia-' . $sidebarModuleKey;
         </div>
     </div>
 
-    <div class="custom-scrollbar flex-1 overflow-y-auto p-2 pb-20 text-sm font-medium text-gray-700">
+    <div class="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-2 pb-20 text-sm font-medium text-gray-700">
         <p id="<?php echo appEscape($emptyId); ?>" data-sidebar-empty class="hidden p-2 text-xs text-gray-500">Nenhuma tela encontrada.</p>
         <?php foreach ($sidebarGroups as $groupKey => $group): ?>
             <?php

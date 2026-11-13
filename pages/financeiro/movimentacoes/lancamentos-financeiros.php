@@ -43,116 +43,128 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $items = [];
             $isIdSearch = ctype_digit($search);
-            if (mb_strlen($search, 'UTF-8') >= 2 || $isIdSearch) {
-                $term = '%' . $search . '%';
-                $idPrefix = $isIdSearch ? $search . '%' : null;
-                if ($type === 'categoria') {
-                    $idCondition = $isIdSearch ? ' OR idCategoria LIKE ?' : '';
-                    $idOrder = $isIdSearch ? 'idCategoria LIKE ? DESC, ' : '';
-                    $statement = $pdo->prepare(
-                        'SELECT idCategoria AS id, nomeCategoria AS nome, naturezaCategoria AS natureza
-                         FROM tbCategoriaLancamentos
-                         WHERE statusCategoria = 1 AND (nomeCategoria LIKE ? OR naturezaCategoria LIKE ?'
-                            . $idCondition . ')
-                         ORDER BY ' . $idOrder . 'naturezaCategoria, nomeCategoria LIMIT 10'
-                    );
-                    $parameters = [$term, $term];
-                    if ($idPrefix !== null) {
-                        $parameters[] = $idPrefix;
-                        $parameters[] = $idPrefix;
-                    }
-                    $statement->execute($parameters);
-                    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                        $items[] = [
-                            'id' => (int) $row['id'],
-                            'label' => (int) $row['id'] . ' — ' . $row['natureza'] . ' — ' . $row['nome'],
-                            'natureza' => $row['natureza'],
-                        ];
-                    }
-                } elseif ($type === 'fonte') {
-                    $idCondition = $isIdSearch ? ' OR idFonte LIKE ?' : '';
-                    $idOrder = $isIdSearch ? 'idFonte LIKE ? DESC, ' : '';
-                    $statement = $pdo->prepare(
-                        'SELECT idFonte AS id, nomeFonte AS nome
-                         FROM tbFonteRecurso WHERE statusFonte = 1 AND (nomeFonte LIKE ?'
-                            . $idCondition . ')
-                         ORDER BY ' . $idOrder . 'nomeFonte LIMIT 10'
-                    );
-                    $parameters = [$term];
-                    if ($idPrefix !== null) {
-                        $parameters[] = $idPrefix;
-                        $parameters[] = $idPrefix;
-                    }
-                    $statement->execute($parameters);
-                    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                        $items[] = ['id' => (int) $row['id'], 'label' => (int) $row['id'] . ' — ' . $row['nome']];
-                    }
-                } elseif ($type === 'formaPagamento') {
-                    $idCondition = $isIdSearch ? ' OR idFormaPagamento LIKE ?' : '';
-                    $idOrder = $isIdSearch ? 'idFormaPagamento LIKE ? DESC, ' : '';
-                    $statement = $pdo->prepare(
-                        'SELECT idFormaPagamento AS id, nomeFormaPagamento AS nome
-                         FROM tbFormaPagamento WHERE statusFormaPagamento = 1 AND (nomeFormaPagamento LIKE ?'
-                            . $idCondition . ')
-                         ORDER BY ' . $idOrder . 'nomeFormaPagamento LIMIT 10'
-                    );
-                    $parameters = [$term];
-                    if ($idPrefix !== null) {
-                        $parameters[] = $idPrefix;
-                        $parameters[] = $idPrefix;
-                    }
-                    $statement->execute($parameters);
-                    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                        $items[] = ['id' => (int) $row['id'], 'label' => (int) $row['id'] . ' — ' . $row['nome']];
-                    }
-                } elseif ($nature === 'Saída') {
-                    $documentTerm = '%' . ($isIdSearch ? $search : preg_replace('/\D/', '', $search)) . '%';
-                    $idCondition = $isIdSearch ? ' OR idFornecedorPrestador LIKE ?' : '';
-                    $idOrder = $isIdSearch ? 'idFornecedorPrestador LIKE ? DESC, ' : '';
-                    $statement = $pdo->prepare(
-                        'SELECT idFornecedorPrestador AS id, nomeRazaoSocial AS nome, documento
-                         FROM tbFornecedorPrestador
-                         WHERE statusFornecedor = 1 AND (nomeRazaoSocial LIKE ? OR documento LIKE ?'
-                            . $idCondition . ')
-                         ORDER BY ' . $idOrder . 'nomeRazaoSocial LIMIT 10'
-                    );
-                    $parameters = [$term, $documentTerm];
-                    if ($idPrefix !== null) {
-                        $parameters[] = $idPrefix;
-                        $parameters[] = $idPrefix;
-                    }
-                    $statement->execute($parameters);
-                    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                        $items[] = [
-                            'id' => (int) $row['id'],
-                            'value' => 'fornecedor:' . (int) $row['id'],
-                            'label' => (int) $row['id'] . ' — ' . $row['nome'] . ' — ' . $row['documento'],
-                        ];
-                    }
-                } else {
-                    $documentTerm = '%' . ($isIdSearch ? $search : preg_replace('/\D/', '', $search)) . '%';
-                    $idCondition = $isIdSearch ? ' OR idDoadorContribuinte LIKE ?' : '';
-                    $idOrder = $isIdSearch ? 'idDoadorContribuinte LIKE ? DESC, ' : '';
-                    $statement = $pdo->prepare(
-                        'SELECT idDoadorContribuinte AS id, nomeRazaoSocial AS nome, documento
-                         FROM tbDoadorContribuinte
-                         WHERE statusDoador = 1 AND (nomeRazaoSocial LIKE ? OR documento LIKE ?'
-                            . $idCondition . ')
-                         ORDER BY ' . $idOrder . 'nomeRazaoSocial LIMIT 10'
-                    );
-                    $parameters = [$term, $documentTerm];
-                    if ($idPrefix !== null) {
-                        $parameters[] = $idPrefix;
-                        $parameters[] = $idPrefix;
-                    }
-                    $statement->execute($parameters);
-                    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                        $items[] = [
-                            'id' => (int) $row['id'],
-                            'value' => 'doador:' . (int) $row['id'],
-                            'label' => (int) $row['id'] . ' — ' . $row['nome'] . ' — ' . $row['documento'],
-                        ];
-                    }
+            $term = '%' . $search . '%';
+            $idPrefix = $isIdSearch ? $search . '%' : null;
+            if ($type === 'categoria') {
+                $idCondition = $isIdSearch ? ' OR idCategoria LIKE ?' : '';
+                $idOrder = $isIdSearch ? 'idCategoria LIKE ? DESC, ' : '';
+                $statement = $pdo->prepare(
+                    'SELECT idCategoria AS id, nomeCategoria AS nome, naturezaCategoria AS natureza
+                     FROM tbCategoriaLancamentos
+                     WHERE statusCategoria = 1 AND (nomeCategoria LIKE ? OR naturezaCategoria LIKE ?'
+                        . $idCondition . ')
+                     ORDER BY ' . $idOrder . 'naturezaCategoria, nomeCategoria LIMIT 50'
+                );
+                $parameters = [$term, $term];
+                if ($idPrefix !== null) {
+                    $parameters[] = $idPrefix;
+                    $parameters[] = $idPrefix;
+                }
+                $statement->execute($parameters);
+                foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                    $items[] = [
+                        'id' => (int) $row['id'],
+                        'label' => (int) $row['id'] . ' — ' . $row['natureza'] . ' — ' . $row['nome'],
+                        'natureza' => $row['natureza'],
+                    ];
+                }
+            } elseif ($type === 'fonte') {
+                $idCondition = $isIdSearch ? ' OR idFonte LIKE ?' : '';
+                $idOrder = $isIdSearch ? 'idFonte LIKE ? DESC, ' : '';
+                $statement = $pdo->prepare(
+                    'SELECT idFonte AS id, nomeFonte AS nome
+                     FROM tbFonteRecurso WHERE statusFonte = 1 AND (nomeFonte LIKE ?'
+                        . $idCondition . ')
+                     ORDER BY ' . $idOrder . 'nomeFonte LIMIT 50'
+                );
+                $parameters = [$term];
+                if ($idPrefix !== null) {
+                    $parameters[] = $idPrefix;
+                    $parameters[] = $idPrefix;
+                }
+                $statement->execute($parameters);
+                foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                    $items[] = ['id' => (int) $row['id'], 'label' => (int) $row['id'] . ' — ' . $row['nome']];
+                }
+            } elseif ($type === 'formaPagamento') {
+                $idCondition = $isIdSearch ? ' OR idFormaPagamento LIKE ?' : '';
+                $idOrder = $isIdSearch ? 'idFormaPagamento LIKE ? DESC, ' : '';
+                $statement = $pdo->prepare(
+                    'SELECT idFormaPagamento AS id, nomeFormaPagamento AS nome
+                     FROM tbFormaPagamento WHERE statusFormaPagamento = 1 AND (nomeFormaPagamento LIKE ?'
+                        . $idCondition . ')
+                     ORDER BY ' . $idOrder . 'nomeFormaPagamento LIMIT 50'
+                );
+                $parameters = [$term];
+                if ($idPrefix !== null) {
+                    $parameters[] = $idPrefix;
+                    $parameters[] = $idPrefix;
+                }
+                $statement->execute($parameters);
+                foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                    $items[] = ['id' => (int) $row['id'], 'label' => (int) $row['id'] . ' — ' . $row['nome']];
+                }
+            } elseif ($nature === 'Saída') {
+                $documentTerm = $search === ''
+                    ? '%'
+                    : (preg_match('/\d/', $search) ? '%' . preg_replace('/\D/', '', $search) . '%' : null);
+                $documentCondition = $documentTerm !== null ? ' OR documento LIKE ?' : '';
+                $idCondition = $isIdSearch ? ' OR idFornecedorPrestador LIKE ?' : '';
+                $idOrder = $isIdSearch ? 'idFornecedorPrestador LIKE ? DESC, ' : '';
+                $statement = $pdo->prepare(
+                    'SELECT idFornecedorPrestador AS id, nomeRazaoSocial AS nome, documento
+                     FROM tbFornecedorPrestador
+                     WHERE statusFornecedor = 1 AND (nomeRazaoSocial LIKE ?'
+                        . $documentCondition
+                        . $idCondition . ')
+                     ORDER BY ' . $idOrder . 'nomeRazaoSocial LIMIT 50'
+                );
+                $parameters = [$term];
+                if ($documentTerm !== null) {
+                    $parameters[] = $documentTerm;
+                }
+                if ($idPrefix !== null) {
+                    $parameters[] = $idPrefix;
+                    $parameters[] = $idPrefix;
+                }
+                $statement->execute($parameters);
+                foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                    $items[] = [
+                        'id' => (int) $row['id'],
+                        'value' => 'fornecedor:' . (int) $row['id'],
+                        'label' => (int) $row['id'] . ' — ' . $row['nome'] . ' — ' . $row['documento'],
+                    ];
+                }
+            } else {
+                $documentTerm = $search === ''
+                    ? '%'
+                    : (preg_match('/\d/', $search) ? '%' . preg_replace('/\D/', '', $search) . '%' : null);
+                $documentCondition = $documentTerm !== null ? ' OR documento LIKE ?' : '';
+                $idCondition = $isIdSearch ? ' OR idDoadorContribuinte LIKE ?' : '';
+                $idOrder = $isIdSearch ? 'idDoadorContribuinte LIKE ? DESC, ' : '';
+                $statement = $pdo->prepare(
+                    'SELECT idDoadorContribuinte AS id, nomeRazaoSocial AS nome, documento
+                     FROM tbDoadorContribuinte
+                     WHERE statusDoador = 1 AND (nomeRazaoSocial LIKE ?'
+                        . $documentCondition
+                        . $idCondition . ')
+                     ORDER BY ' . $idOrder . 'nomeRazaoSocial LIMIT 50'
+                );
+                $parameters = [$term];
+                if ($documentTerm !== null) {
+                    $parameters[] = $documentTerm;
+                }
+                if ($idPrefix !== null) {
+                    $parameters[] = $idPrefix;
+                    $parameters[] = $idPrefix;
+                }
+                $statement->execute($parameters);
+                foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                    $items[] = [
+                        'id' => (int) $row['id'],
+                        'value' => 'doador:' . (int) $row['id'],
+                        'label' => (int) $row['id'] . ' — ' . $row['nome'] . ' — ' . $row['documento'],
+                    ];
                 }
             }
 
@@ -572,10 +584,15 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                         <legend class="px-2 text-sm font-semibold text-gray-700">2. Classificação e vínculos</legend>
                         <div class="relative" data-reference-search data-reference-type="categoria" data-natureza="<?php echo appEscape($autocompleteValues['idCategoria']['natureza']); ?>">
                             <label for="idCategoriaPesquisa" class="text-sm font-medium text-gray-700">Categoria (define entrada ou saída)</label>
-                            <input id="idCategoriaPesquisa" type="search" data-reference-input data-required-reference autocomplete="off" required role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugestoes-categoria" value="<?php echo appEscape($autocompleteValues['idCategoria']['label']); ?>" placeholder="Digite para pesquisar uma categoria" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            <span class="mt-1 flex">
+                                <input id="idCategoriaPesquisa" type="search" data-reference-input data-required-reference autocomplete="off" required role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugestoes-categoria" value="<?php echo appEscape($autocompleteValues['idCategoria']['label']); ?>" placeholder="Pesquise ou selecione uma categoria" class="min-w-0 flex-1 rounded-l border border-r-0 border-gray-300 px-3 py-2">
+                                <button type="button" data-reference-toggle aria-label="Mostrar categorias disponíveis" title="Mostrar categorias disponíveis" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-r border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 focus:z-10 focus:outline-none focus:ring-2 focus:ring-elo-teal">
+                                    <i class="ph ph-caret-down" aria-hidden="true"></i>
+                                </button>
+                            </span>
                             <input type="hidden" name="idCategoria" data-reference-id value="<?php echo (int) ($lancamentoEdicao['idCategoria'] ?? 0) ?: ''; ?>">
                             <div id="sugestoes-categoria" data-reference-results role="listbox" class="absolute z-20 mt-1 hidden max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"></div>
-                            <p data-reference-message role="status" aria-live="polite" class="mt-1 text-xs text-gray-500">Digite o ID ou ao menos 2 caracteres do nome.</p>
+                            <p data-reference-message role="status" aria-live="polite" class="mt-1 text-xs text-gray-500">Abra a lista ou digite para filtrar.</p>
                         </div>
                         <div class="relative" data-reference-search data-reference-type="pessoa" data-natureza="<?php echo appEscape($autocompleteValues['idCategoria']['natureza']); ?>">
                             <label for="pessoaRelacionadaPesquisa" data-counterparty-label class="text-sm font-medium text-gray-700"><?php
@@ -585,7 +602,12 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                                         ? 'Empresa ou pessoa física que realizou o pagamento (opcional)'
                                         : 'Empresa ou pessoa física do pagamento (opcional)');
                             ?></label>
-                            <input id="pessoaRelacionadaPesquisa" type="search" data-reference-input autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugestoes-pessoa" value="<?php echo appEscape($autocompleteValues['pessoaRelacionada']['label']); ?>" placeholder="<?php echo $autocompleteValues['idCategoria']['natureza'] === 'Saída' ? 'Pesquise um fornecedor ou prestador' : ($autocompleteValues['idCategoria']['natureza'] === 'Entrada' ? 'Pesquise um doador ou contribuinte' : 'Selecione uma categoria primeiro'); ?>" <?php echo $autocompleteValues['idCategoria']['natureza'] === '' ? 'disabled' : ''; ?> class="mt-1 w-full rounded border border-gray-300 px-3 py-2 disabled:cursor-not-allowed disabled:bg-gray-100">
+                            <span class="mt-1 flex">
+                                <input id="pessoaRelacionadaPesquisa" type="search" data-reference-input autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugestoes-pessoa" value="<?php echo appEscape($autocompleteValues['pessoaRelacionada']['label']); ?>" placeholder="<?php echo $autocompleteValues['idCategoria']['natureza'] === 'Saída' ? 'Pesquise um fornecedor ou prestador' : ($autocompleteValues['idCategoria']['natureza'] === 'Entrada' ? 'Pesquise um doador ou contribuinte' : 'Selecione uma categoria primeiro'); ?>" <?php echo $autocompleteValues['idCategoria']['natureza'] === '' ? 'disabled' : ''; ?> class="min-w-0 flex-1 rounded-l border border-r-0 border-gray-300 px-3 py-2 disabled:cursor-not-allowed disabled:bg-gray-100">
+                                <button type="button" data-reference-toggle aria-label="Mostrar pessoas disponíveis" title="Mostrar pessoas disponíveis" <?php echo $autocompleteValues['idCategoria']['natureza'] === '' ? 'disabled' : ''; ?> class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-r border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 focus:z-10 focus:outline-none focus:ring-2 focus:ring-elo-teal disabled:cursor-not-allowed disabled:opacity-50">
+                                    <i class="ph ph-caret-down" aria-hidden="true"></i>
+                                </button>
+                            </span>
                             <input type="hidden" name="pessoaRelacionada" data-reference-id value="<?php echo appEscape($pessoaRelacionada); ?>">
                             <div id="sugestoes-pessoa" data-reference-results role="listbox" class="absolute z-20 mt-1 hidden max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"></div>
                             <p data-reference-message data-counterparty-help role="status" aria-live="polite" class="mt-1 text-xs text-gray-500"><?php
@@ -598,17 +620,27 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                         </div>
                         <div class="relative" data-reference-search data-reference-type="fonte">
                             <label for="idFontePesquisa" class="text-sm font-medium text-gray-700">Fonte de recurso (opcional)</label>
-                            <input id="idFontePesquisa" type="search" data-reference-input autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugestoes-fonte" value="<?php echo appEscape($autocompleteValues['idFonte']['label']); ?>" placeholder="Digite para pesquisar uma fonte" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            <span class="mt-1 flex">
+                                <input id="idFontePesquisa" type="search" data-reference-input autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugestoes-fonte" value="<?php echo appEscape($autocompleteValues['idFonte']['label']); ?>" placeholder="Pesquise ou selecione uma fonte" class="min-w-0 flex-1 rounded-l border border-r-0 border-gray-300 px-3 py-2">
+                                <button type="button" data-reference-toggle aria-label="Mostrar fontes disponíveis" title="Mostrar fontes disponíveis" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-r border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 focus:z-10 focus:outline-none focus:ring-2 focus:ring-elo-teal">
+                                    <i class="ph ph-caret-down" aria-hidden="true"></i>
+                                </button>
+                            </span>
                             <input type="hidden" name="idFonte" data-reference-id value="<?php echo (int) ($lancamentoEdicao['idFonte'] ?? 0) ?: ''; ?>">
                             <div id="sugestoes-fonte" data-reference-results role="listbox" class="absolute z-20 mt-1 hidden max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"></div>
-                            <p data-reference-message role="status" aria-live="polite" class="mt-1 text-xs text-gray-500">Digite o ID ou ao menos 2 caracteres do nome.</p>
+                            <p data-reference-message role="status" aria-live="polite" class="mt-1 text-xs text-gray-500">Abra a lista ou digite para filtrar.</p>
                         </div>
                         <div class="relative" data-reference-search data-reference-type="formaPagamento">
                             <label for="idFormaPagamentoPesquisa" class="text-sm font-medium text-gray-700">Forma de pagamento (opcional)</label>
-                            <input id="idFormaPagamentoPesquisa" type="search" data-reference-input autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugestoes-forma-pagamento" value="<?php echo appEscape($autocompleteValues['idFormaPagamento']['label']); ?>" placeholder="Digite para pesquisar uma forma" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                            <span class="mt-1 flex">
+                                <input id="idFormaPagamentoPesquisa" type="search" data-reference-input autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugestoes-forma-pagamento" value="<?php echo appEscape($autocompleteValues['idFormaPagamento']['label']); ?>" placeholder="Pesquise ou selecione uma forma" class="min-w-0 flex-1 rounded-l border border-r-0 border-gray-300 px-3 py-2">
+                                <button type="button" data-reference-toggle aria-label="Mostrar formas de pagamento disponíveis" title="Mostrar formas de pagamento disponíveis" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-r border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 focus:z-10 focus:outline-none focus:ring-2 focus:ring-elo-teal">
+                                    <i class="ph ph-caret-down" aria-hidden="true"></i>
+                                </button>
+                            </span>
                             <input type="hidden" name="idFormaPagamento" data-reference-id value="<?php echo (int) ($lancamentoEdicao['idFormaPagamento'] ?? 0) ?: ''; ?>">
                             <div id="sugestoes-forma-pagamento" data-reference-results role="listbox" class="absolute z-20 mt-1 hidden max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"></div>
-                            <p data-reference-message role="status" aria-live="polite" class="mt-1 text-xs text-gray-500">Digite o ID ou ao menos 2 caracteres do nome.</p>
+                            <p data-reference-message role="status" aria-live="polite" class="mt-1 text-xs text-gray-500">Abra a lista ou digite para filtrar.</p>
                         </div>
                     </fieldset>
 
@@ -690,6 +722,7 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
             const personInput = personSearch.querySelector('[data-reference-input]');
             const personLabel = personSearch.querySelector('[data-counterparty-label]');
             const personHelp = personSearch.querySelector('[data-counterparty-help]');
+            const personToggle = personSearch.querySelector('[data-reference-toggle]');
 
             const showResults = (search, message) => {
                 search.querySelector('[data-reference-results]').classList.remove('hidden');
@@ -710,6 +743,7 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                 const nature = categorySearch.dataset.natureza || '';
                 personSearch.dataset.natureza = nature;
                 personInput.disabled = nature === '';
+                personToggle.disabled = nature === '';
                 if (nature === 'Saída') {
                     personLabel.textContent = 'Empresa ou pessoa física que receberá o pagamento (opcional)';
                     personHelp.textContent = 'Selecione quem receberá o pagamento (fornecedor/prestador).';
@@ -730,6 +764,7 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
             form.querySelectorAll('[data-reference-search]').forEach((search) => {
                 const input = search.querySelector('[data-reference-input]');
                 const hidden = search.querySelector('[data-reference-id]');
+                const toggle = search.querySelector('[data-reference-toggle]');
                 const results = search.querySelector('[data-reference-results]');
                 const message = search.querySelector('[data-reference-message]');
                 const type = search.dataset.referenceType;
@@ -774,19 +809,17 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                         });
                         results.append(option);
                     });
-                    showResults(search, `${items.length} sugestão(ões). Use as setas e Enter para selecionar.`);
+                    const countMessage = items.length === 50
+                        ? 'Mostrando até 50 opções. Digite para filtrar.'
+                        : `${items.length} opção(ões). Use as setas e Enter para selecionar.`;
+                    showResults(search, countMessage);
                 };
-                const searchItems = async () => {
-                    const query = input.value.trim();
-                    const isIdSearch = /^\d+$/.test(query);
-                    if (query.length < 2 && !isIdSearch) {
-                        closeResults(search);
-                        message.textContent = 'Digite o ID ou ao menos 2 caracteres do nome.';
-                        return;
-                    }
+                const searchItems = async (browseAll = false) => {
+                    const query = browseAll ? '' : input.value.trim();
 
                     requestController?.abort();
-                    requestController = new AbortController();
+                    const controller = new AbortController();
+                    requestController = controller;
                     const body = new FormData();
                     body.set('csrfToken', csrfToken);
                     body.set('tabToken', form.elements.namedItem('tabToken')?.value || fallbackTabToken || '');
@@ -803,21 +836,32 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                             body,
                             headers: {'X-Requested-With': 'XMLHttpRequest'},
                             credentials: 'same-origin',
-                            signal: requestController.signal
+                            signal: controller.signal
                         });
                         if (!(response.headers.get('content-type') || '').includes('application/json')) {
                             throw new Error('Não foi possível validar sua sessão. Atualize a página e tente novamente.');
                         }
                         const result = await response.json();
                         if (!response.ok) throw new Error(result.message || 'Não foi possível pesquisar os cadastros.');
+                        if (requestController !== controller) return;
                         renderItems(result.items);
                     } catch (error) {
                         if (error.name === 'AbortError') return;
+                        if (requestController !== controller) return;
                         results.replaceChildren();
                         showResults(search, error.message || 'Falha ao pesquisar os cadastros.');
                     }
                 };
 
+                toggle.addEventListener('pointerdown', (event) => event.preventDefault());
+                toggle.addEventListener('click', () => {
+                    if (input.getAttribute('aria-expanded') === 'true') {
+                        requestController?.abort();
+                        closeResults(search);
+                        return;
+                    }
+                    searchItems(true);
+                });
                 input.addEventListener('input', () => {
                     window.clearTimeout(debounceTimer);
                     if (requestController) requestController.abort();
@@ -836,7 +880,7 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                             ? ''
                             : 'Selecione uma opção nas sugestões ou apague o texto.');
                     }
-                    debounceTimer = window.setTimeout(searchItems, 250);
+                    debounceTimer = window.setTimeout(() => searchItems(), 250);
                 });
                 input.addEventListener('keydown', (event) => {
                     const options = Array.from(results.querySelectorAll('[role="option"]'));
@@ -868,10 +912,7 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                         if (!search.contains(document.activeElement)) closeResults(search);
                     }, 100);
                 });
-                input.addEventListener('focus', () => {
-                    const query = input.value.trim();
-                    if ((query.length >= 2 || /^\d+$/.test(query)) && hidden.value === '') searchItems();
-                });
+                input.addEventListener('focus', () => searchItems(true));
             });
 
             updatePersonAvailability();
