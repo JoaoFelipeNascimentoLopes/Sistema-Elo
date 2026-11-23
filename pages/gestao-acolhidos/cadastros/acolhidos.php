@@ -553,7 +553,7 @@ $mensagensResultado = [
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cadastro de Acolhidos | Sistema Elo</title>
+    <title>Sistema Elo</title>
     <link rel="icon" type="image/png" href="<?php echo appEscape($baseUrl . '/assets/imgs/logo-elo.png'); ?>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -928,6 +928,9 @@ $mensagensResultado = [
                                             <td class="p-3"><?php echo appEscape(trim((string) ($acolhido['cidade'] ?? '') . (!empty($acolhido['uf']) ? '/' . $acolhido['uf'] : ''), '/') ?: '—'); ?></td>
                                             <td class="whitespace-nowrap p-3"><div class="flex items-center gap-3">
                                                     <a href="<?php echo appEscape(appTabUrl($urlAtual . '?editar=' . (int) $acolhido['idAcolhido'] . '&subaba=acolhidos#manutencao')); ?>" class="inline-flex h-9 w-9 items-center justify-center rounded border border-gray-200 text-elo-teal hover:bg-elo-teal/5" aria-label="Editar acolhido"><i class="ph ph-pencil-simple text-lg" aria-hidden="true"></i></a>
+                                                    <?php if (appCanAccess('gestao-acolhidos.relatorios/fichas-medicas', $usuarioAtual)): ?>
+                                                        <a href="<?php echo appEscape(appTabUrl($baseUrl . '/pages/gestao-acolhidos/relatorios/fichas-medicas.php?idAcolhido=' . (int) $acolhido['idAcolhido'])); ?>" class="inline-flex h-9 w-9 items-center justify-center rounded border border-gray-200 text-elo-teal hover:bg-elo-teal/5" aria-label="Imprimir fichas médicas" title="Imprimir fichas médicas"><i class="ph ph-printer text-lg" aria-hidden="true"></i></a>
+                                                    <?php endif; ?>
                                                     <form method="post" data-confirm="Excluir este cadastro? A exclusão será bloqueada se houver fichas médicas vinculadas.">
                                                         <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
                                                         <input type="hidden" name="acao" value="excluirAcolhido">

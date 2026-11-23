@@ -394,7 +394,7 @@ exit;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Relatório de Usuários por Perfis</title>
+    <title>Sistema Elo</title>
     <link rel="stylesheet" href="<?php echo appEscape(appBaseUrl() . '/assets/css/usuarios-por-perfis.css?v=' . filemtime(__DIR__ . '/../../../assets/css/usuarios-por-perfis.css')); ?>">
     <style>
         @page {

@@ -109,7 +109,7 @@ if ($nomeInstituicao === null) {
     http_response_code(409);
     header('Content-Type: text/html; charset=UTF-8');
     $voltarUrl = appTabUrl('lancamentos-financeiros.php');
-    echo '<!DOCTYPE html><html lang="pt-br"><meta charset="UTF-8"><title>Recibo não emitido</title>'
+    echo '<!DOCTYPE html><html lang="pt-br"><meta charset="UTF-8"><title>Sistema Elo</title>'
         . '<body style="margin:0;padding:40px;background:#f3f4f6;font:16px Arial,sans-serif;color:#1f2937">'
         . '<main style="max-width:640px;margin:auto;padding:28px;background:#fff;border:1px solid #d1d5db;border-radius:8px">'
         . '<h1 style="margin-top:0">Recibo não emitido</h1>'

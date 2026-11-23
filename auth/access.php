@@ -133,6 +133,13 @@ function appPageCatalog(): array
         'gestao-acolhidos/cadastros/leitos.php' => 'Leitos',
         'gestao-acolhidos/movimentacoes/acolhimento.php' => 'Acolhimentos',
         'gestao-acolhidos/movimentacoes/acomodacoes-acolhidos.php' => 'Acomodações dos Acolhidos',
+        'gestao-acolhidos/relatorios/acolhidos.php' => 'Acolhidos',
+        'gestao-acolhidos/relatorios/fichas-medicas.php' => 'Fichas Médicas',
+        'gestao-acolhidos/relatorios/acolhimentos.php' => 'Acolhimentos',
+        'gestao-acolhidos/relatorios/blocos.php' => 'Blocos',
+        'gestao-acolhidos/relatorios/quartos.php' => 'Quartos',
+        'gestao-acolhidos/relatorios/leitos.php' => 'Leitos',
+        'gestao-acolhidos/relatorios/acomodacoes.php' => 'Acomodações dos Acolhidos',
     ];
     $legacyPageKeys = [
         // Financeiro
@@ -233,6 +240,9 @@ function appPageCatalog(): array
                 'url' => "$base/pages/$moduleKey/$relativeUrl.php",
                 'arquivo' => $relativePath,
             ];
+            if ($moduleKey === 'gestao-acolhidos' && $relativePath === 'relatorios/fichas-medicas.php') {
+                $catalog[$moduleKey]['paginas'][$pageKey]['mostrarNoMenu'] = false;
+            }
         }
 
         ksort($catalog[$moduleKey]['paginas']);
@@ -332,7 +342,7 @@ function appFirstAllowedUrl(array $user): ?string
 
     foreach ($catalog as $moduleKey => $module) {
         foreach ($module['paginas'] as $pageKey => $page) {
-            if (appCanAccess("$moduleKey.$pageKey", $user)) {
+            if (($page['mostrarNoMenu'] ?? true) && appCanAccess("$moduleKey.$pageKey", $user)) {
                 return $page['url'];
             }
         }
@@ -350,14 +360,15 @@ function appFirstAllowedModuleUrl(string $moduleKey, ?array $user = null): ?stri
     }
 
     foreach ($module['paginas'] as $pageKey => $page) {
-        if (str_starts_with(strtolower(pathinfo($page['arquivo'], PATHINFO_FILENAME)), 'dashboard')
+        if (($page['mostrarNoMenu'] ?? true)
+            && str_starts_with(strtolower(pathinfo($page['arquivo'], PATHINFO_FILENAME)), 'dashboard')
             && appCanAccess("$moduleKey.$pageKey", $user)) {
             return $page['url'];
         }
     }
 
     foreach ($module['paginas'] as $pageKey => $page) {
-        if (appCanAccess("$moduleKey.$pageKey", $user)) {
+        if (($page['mostrarNoMenu'] ?? true) && appCanAccess("$moduleKey.$pageKey", $user)) {
             return $page['url'];
         }
     }
@@ -379,7 +390,7 @@ function appVisibleModulePages(string $moduleKey, ?array $user = null): array
 
     $pages = [];
     foreach ($module['paginas'] as $pageKey => $page) {
-        if (appCanAccess("$moduleKey.$pageKey", $user)) {
+        if (($page['mostrarNoMenu'] ?? true) && appCanAccess("$moduleKey.$pageKey", $user)) {
             $page['chave'] = $pageKey;
             $pages[] = $page;
         }

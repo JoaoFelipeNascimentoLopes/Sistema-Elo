@@ -423,7 +423,7 @@ if ($reportGenerated && !$errors && ($_POST['reportAction'] ?? '') === 'download
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo appEscape($reportConfig['title']); ?></title>
+    <title>Sistema Elo</title>
     <link rel="stylesheet" href="<?php echo appEscape($baseUrl . '/assets/css/usuarios-por-perfis.css?v=' . filemtime(__DIR__ . '/../../../assets/css/usuarios-por-perfis.css')); ?>">
     <style>
         @page {
