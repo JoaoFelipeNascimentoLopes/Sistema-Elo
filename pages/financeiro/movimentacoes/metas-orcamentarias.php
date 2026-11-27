@@ -317,8 +317,7 @@ if (isset($metaEdicao['valorOrcado'])) {
     <div class="flex flex-1 overflow-hidden">
         <?php include __DIR__ . '/../../../components/financeiro/sidebar-financeiro.php'; ?>
         <main class="flex-1 overflow-y-auto bg-gray-50 p-4 md:p-6">
-            <h1 class="mb-2 text-2xl font-bold text-gray-800">Metas Orçamentárias</h1>
-            <p class="mb-6 text-sm text-gray-600">Controle informativo do orçamento mensal. O sistema nunca bloqueia lançamentos por ultrapassar o valor orçado.</p>
+            <h1 class="mb-6 text-2xl font-bold text-gray-800">Metas Orçamentárias</h1>
             <?php include __DIR__ . '/../../../components/tabs-pesquisa-manutencao.php'; ?>
             <section id="painel-manutencao" role="tabpanel" aria-labelledby="tab-manutencao" class="mb-8 rounded-lg border border-gray-200 bg-white p-5 shadow-sm" <?php echo $abaInicial === 'manutencao' ? '' : 'hidden'; ?>>
                 <h2 class="mb-4 text-lg font-semibold"><?php echo !empty($metaEdicao['idMetaOrcamentaria']) ? 'Alterar valor orçado' : 'Definir orçamento mensal'; ?></h2>

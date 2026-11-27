@@ -1157,12 +1157,168 @@ runWhenReady(() => {
     document.querySelectorAll('[data-filter-input]').forEach((input) => {
         const target = document.getElementById(input.dataset.filterInput);
         if (!target) return;
-        input.addEventListener('input', () => {
-            const term = normalizeSearchText(input.value);
-            target.querySelectorAll('tr').forEach((row) => {
-                row.hidden = !normalizeSearchText(row.textContent).includes(term);
-            });
+
+        const allRows = Array.from(target.querySelectorAll(':scope > tr'));
+        const isEmptyPlaceholderRow = (row) => row.cells.length === 1 && row.cells[0].colSpan > 1;
+        const dataRows = allRows.filter((row) => !isEmptyPlaceholderRow(row));
+        if (dataRows.length === 0) return;
+
+        const table = target.closest('table');
+        const tableContainer = table?.closest('.overflow-x-auto') || table;
+        if (!table || !tableContainer) return;
+
+        const columnCount = table.querySelectorAll('thead th').length || dataRows[0].cells.length || 1;
+        const noMatchRow = document.createElement('tr');
+        noMatchRow.hidden = true;
+        const noMatchCell = document.createElement('td');
+        noMatchCell.colSpan = columnCount;
+        noMatchCell.className = 'px-3 py-8 text-center text-sm text-gray-500';
+        noMatchCell.textContent = 'Nenhum registro encontrado para a pesquisa informada.';
+        noMatchRow.append(noMatchCell);
+        target.append(noMatchRow);
+
+        const pageSizeOptions = [10, 25, 50, 100];
+        let pageSize = 10;
+        let currentPage = 1;
+
+        const bar = document.createElement('div');
+        bar.className = 'mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-3 text-sm';
+        bar.setAttribute('data-table-pagination', input.dataset.filterInput);
+        bar.setAttribute('data-preserve-case', 'true');
+
+        const leftGroup = document.createElement('div');
+        leftGroup.className = 'flex flex-wrap items-center gap-3 text-xs text-gray-600';
+
+        const sizeLabel = document.createElement('label');
+        sizeLabel.className = 'inline-flex items-center gap-2';
+        const sizePrefix = document.createElement('span');
+        sizePrefix.textContent = 'Mostrar';
+        const sizeSelect = document.createElement('select');
+        sizeSelect.setAttribute('aria-label', 'Registros por página');
+        sizeSelect.className = 'rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800 focus:border-elo-teal focus:outline-none focus:ring-1 focus:ring-elo-teal';
+        pageSizeOptions.forEach((size) => {
+            const option = document.createElement('option');
+            option.value = String(size);
+            option.textContent = String(size);
+            if (size === pageSize) option.selected = true;
+            sizeSelect.append(option);
         });
+        const sizeSuffix = document.createElement('span');
+        sizeSuffix.textContent = 'por página';
+        sizeLabel.append(sizePrefix, sizeSelect, sizeSuffix);
+
+        const divider = document.createElement('span');
+        divider.className = 'text-gray-300';
+        divider.textContent = '|';
+
+        const summary = document.createElement('span');
+        leftGroup.append(sizeLabel, divider, summary);
+
+        const nav = document.createElement('nav');
+        nav.className = 'flex flex-wrap items-center gap-1.5';
+        nav.setAttribute('aria-label', 'Paginação da tabela');
+
+        bar.append(leftGroup, nav);
+        tableContainer.insertAdjacentElement('afterend', bar);
+
+        const buildPageList = (page, totalPages) => {
+            if (totalPages <= 7) {
+                return Array.from({ length: totalPages }, (_, index) => index + 1);
+            }
+            const pages = [1];
+            const start = Math.max(2, page - 1);
+            const end = Math.min(totalPages - 1, page + 1);
+            if (start > 2) pages.push(null);
+            for (let num = start; num <= end; num++) pages.push(num);
+            if (end < totalPages - 1) pages.push(null);
+            pages.push(totalPages);
+            return pages;
+        };
+
+        const createNavButton = (label, targetPage, disabled, isCurrent = false) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = label;
+            if (isCurrent) {
+                button.disabled = true;
+                button.setAttribute('aria-current', 'page');
+                button.className = 'inline-flex min-w-[28px] items-center justify-center rounded border border-elo-teal bg-elo-teal px-2 py-1.5 text-xs font-semibold text-white';
+                return button;
+            }
+            button.disabled = disabled;
+            button.className = disabled
+                ? 'inline-flex min-w-[28px] cursor-not-allowed items-center justify-center rounded border border-gray-200 bg-gray-100 px-2.5 py-1.5 text-xs font-medium text-gray-400'
+                : 'inline-flex min-w-[28px] items-center justify-center rounded border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100';
+            if (!disabled) {
+                button.addEventListener('click', () => {
+                    currentPage = targetPage;
+                    render();
+                });
+            }
+            return button;
+        };
+
+        const render = () => {
+            const term = normalizeSearchText(input.value.trim());
+            const filteredRows = term === ''
+                ? dataRows
+                : dataRows.filter((row) => normalizeSearchText(row.textContent).includes(term));
+
+            const totalFiltered = filteredRows.length;
+            const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const visibleSet = new Set(filteredRows.slice(startIndex, endIndex));
+
+            dataRows.forEach((row) => {
+                row.hidden = !visibleSet.has(row);
+            });
+            noMatchRow.hidden = totalFiltered > 0;
+
+            if (totalFiltered === 0) {
+                summary.textContent = term !== ''
+                    ? `0 de ${dataRows.length} registro(s)`
+                    : '0 registro(s)';
+            } else {
+                const startDisplay = startIndex + 1;
+                const endDisplay = Math.min(totalFiltered, endIndex);
+                summary.textContent = term !== ''
+                    ? `Mostrando ${startDisplay}–${endDisplay} de ${totalFiltered} (filtrado de ${dataRows.length})`
+                    : `Mostrando ${startDisplay}–${endDisplay} de ${totalFiltered} registro(s)`;
+            }
+
+            nav.replaceChildren();
+            nav.append(createNavButton('Anterior', currentPage - 1, currentPage <= 1));
+            buildPageList(currentPage, totalPages).forEach((pageItem) => {
+                if (pageItem === null) {
+                    const dots = document.createElement('span');
+                    dots.className = 'px-1.5 text-xs text-gray-400';
+                    dots.textContent = '…';
+                    nav.append(dots);
+                } else {
+                    nav.append(createNavButton(String(pageItem), pageItem, false, pageItem === currentPage));
+                }
+            });
+            nav.append(createNavButton('Próxima', currentPage + 1, currentPage >= totalPages));
+        };
+
+        input.addEventListener('input', () => {
+            currentPage = 1;
+            render();
+        });
+        sizeSelect.addEventListener('change', () => {
+            const parsed = Number(sizeSelect.value);
+            if (pageSizeOptions.includes(parsed)) {
+                pageSize = parsed;
+                currentPage = 1;
+                render();
+            }
+        });
+
+        render();
     });
 
     document.querySelectorAll('[data-toast]').forEach((toast) => {

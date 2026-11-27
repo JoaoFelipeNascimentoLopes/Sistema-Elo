@@ -178,7 +178,6 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                 <header class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
                         <h1 class="text-2xl font-bold text-gray-800">Dashboard Financeiro</h1>
-                        <p class="mt-1 text-sm text-gray-500">Acompanhe o movimento e a saúde financeira da instituição.</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         <span class="mr-1 text-sm text-slate-500"><?php echo appEscape($meses[(int) $inicioMesAtual->format('n')] . ' de ' . $inicioMesAtual->format('Y')); ?></span>

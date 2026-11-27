@@ -316,6 +316,21 @@ try {
     );
     $save->execute($values);
     $pdo->commit();
+    appRegistrarAuditoria(
+        'instituicao',
+        'editar',
+        'Informações da instituição atualizadas.',
+        'tbInformacoesInstituicao',
+        1,
+        [
+            'cnpj' => $values['cnpj'],
+            'razaoSocial' => $values['razaoSocial'],
+            'nomeFantasia' => $values['nomeFantasia'],
+            'cidade' => $values['cidade'],
+            'uf' => $values['uf'],
+        ],
+        $usuarioAtual
+    );
     $respond(200, ['message' => 'Informações da instituição salvas.']);
 } catch (JsonException $exception) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {

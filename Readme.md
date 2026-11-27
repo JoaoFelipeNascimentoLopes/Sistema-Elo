@@ -55,10 +55,16 @@ O **Sistema Elo** é uma aplicação web desenvolvida para centralizar e organiz
 - **Cadastros**
   - **Usuários:** inclusão, edição, ativação/inativação, bloqueio de acesso, definição de perfil, troca forçada de senha e tempo de expiração da sessão.
   - **Perfis de Acesso:** gerenciamento completo de perfis com matriz de permissões por módulo, categoria e tela.
+  - **Colaboradores e Voluntários:** cadastro da equipe da instituição (colaboradores, voluntários, estagiários e terceirizados) com validação de CPF, cargo/função, registro profissional, turno, endereço via ViaCEP e vínculo opcional com usuário do sistema.
+- **Movimentações**
+  - **Log de Auditoria:** trilha somente leitura de eventos de autenticação, segurança e alterações administrativas (logins, falhas, bloqueios, trocas de senha, cadastros/edições/exclusões e alterações da instituição), com cards de resumo, filtros combinados (incluindo combobox de usuário com autocomplete), paginação configurável, modal de detalhes técnicos e impressão/PDF da filtragem.
+  - **Livro de Plantão e Avisos:** registro de passagens de turno, ocorrências e avisos gerais com mural de avisos fixados no topo, prioridade, acompanhamento de status/resolução, vínculo opcional com colaborador e acolhido, filtros e impressão/PDF da folha de plantão.
 - **Relatórios**
   - **Usuários por Perfis:** consulta filtrada e exportação em PDF.
+  - **Matriz de Permissões por Perfil:** relatório em modo comparativo (Telas × Perfis) ou detalhado por perfil, com filtros por perfil, módulo e categoria, prévia de impressão e exportação em PDF via Dompdf.
+  - **Colaboradores e Voluntários:** relatório configurável com filtros dinâmicos, agrupamentos, ordenação, prévia de impressão e exportação em PDF via Dompdf.
 - **Dashboard**
-  - Estrutura inicial do **Dashboard Geral** preparada para indicadores consolidados.
+  - **Dashboard Geral:** visão executiva integrada com indicadores de acolhidos ativos, ocupação de leitos, equipe/voluntários, pendências do plantão, usuários e alertas de segurança, mural de avisos fixados, resumo financeiro do mês (respeitando permissões), atividade recente de auditoria e atalhos rápidos.
 
 ---
 

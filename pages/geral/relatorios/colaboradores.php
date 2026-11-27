@@ -1,0 +1,76 @@
+<?php
+require_once __DIR__ . '/../../../auth/access.php';
+$usuarioAtual = appRequirePage('geral.relatorios/colaboradores');
+$reportConfig = [
+    'module' => 'geral',
+    'navbar' => __DIR__ . '/../../../components/geral/navbar-geral.php',
+    'sidebar' => __DIR__ . '/../../../components/geral/sidebar-geral.php',
+    'file' => 'colaboradores.php',
+    'title' => 'Relatório de Colaboradores e Voluntários',
+    'pageTitle' => 'Colaboradores e Voluntários',
+    'singular' => 'registro',
+    'plural' => 'registros',
+    'downloadName' => 'relatorio-colaboradores-voluntarios.pdf',
+    'select' => 'SELECT c.idColaborador, c.nomeCompleto, c.cpf, c.rg, c.dataNascimento,
+                         c.tipoVinculo, c.cargoFuncao, c.registroProfissional, c.turno,
+                         c.dataInicio, c.dataDesligamento, c.email, c.telefone,
+                         c.cidade, c.uf, c.ativo, c.criadoEm, c.atualizadoEm,
+                         uv.login AS usuarioVinculado,
+                         criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
+                         alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor',
+    'from' => 'FROM tbColaborador c
+               LEFT JOIN tbUsuario uv ON uv.idUsuario = c.idUsuario
+               INNER JOIN tbUsuario criador ON criador.idUsuario = c.idUsuarioCriacao
+               LEFT JOIN tbUsuario alterador ON alterador.idUsuario = c.idUsuarioAlteracao',
+    'filters' => [
+        'nome' => ['label' => 'Nome completo', 'type' => 'text', 'sql' => 'c.nomeCompleto'],
+        'cpf' => ['label' => 'CPF (somente números)', 'type' => 'text', 'sql' => 'c.cpf'],
+        'tipoVinculo' => ['label' => 'Tipo de vínculo', 'type' => 'option', 'sql' => 'c.tipoVinculo', 'options' => [
+            'Colaborador' => 'Colaborador',
+            'Voluntário' => 'Voluntário',
+            'Estagiário' => 'Estagiário',
+            'Terceirizado' => 'Terceirizado',
+        ]],
+        'cargoFuncao' => ['label' => 'Cargo / Função', 'type' => 'text', 'sql' => 'c.cargoFuncao'],
+        'turno' => ['label' => 'Turno', 'type' => 'option', 'sql' => 'c.turno', 'options' => [
+            'Manhã' => 'Manhã',
+            'Tarde' => 'Tarde',
+            'Noite' => 'Noite',
+            'Integral' => 'Integral',
+            'Plantão 12x36' => 'Plantão 12x36',
+            'Flexível' => 'Flexível',
+        ]],
+        'status' => ['label' => 'Status', 'type' => 'option', 'sql' => 'c.ativo', 'options' => [
+            '1' => 'Ativo',
+            '0' => 'Inativo',
+        ]],
+        'dataInicio' => ['label' => 'Data de início', 'type' => 'date', 'sql' => 'c.dataInicio'],
+        'dataDesligamento' => ['label' => 'Data de desligamento', 'type' => 'date', 'sql' => 'c.dataDesligamento'],
+        'cidade' => ['label' => 'Cidade', 'type' => 'text', 'sql' => 'c.cidade'],
+        'uf' => ['label' => 'UF', 'type' => 'text', 'sql' => 'c.uf'],
+    ],
+    'columns' => [
+        'id' => ['label' => 'ID', 'sql' => 'c.idColaborador', 'value' => 'idColaborador'],
+        'nome' => ['label' => 'Nome completo', 'sql' => 'c.nomeCompleto', 'value' => 'nomeCompleto'],
+        'cpf' => ['label' => 'CPF', 'sql' => 'c.cpf', 'value' => 'cpf', 'format' => 'cpf'],
+        'rg' => ['label' => 'RG', 'sql' => 'c.rg', 'value' => 'rg'],
+        'dataNascimento' => ['label' => 'Data de nascimento', 'sql' => 'c.dataNascimento', 'value' => 'dataNascimento', 'format' => 'date'],
+        'tipoVinculo' => ['label' => 'Tipo de vínculo', 'sql' => 'c.tipoVinculo', 'value' => 'tipoVinculo'],
+        'cargoFuncao' => ['label' => 'Cargo / Função', 'sql' => 'c.cargoFuncao', 'value' => 'cargoFuncao'],
+        'registroProfissional' => ['label' => 'Registro profissional', 'sql' => 'c.registroProfissional', 'value' => 'registroProfissional'],
+        'turno' => ['label' => 'Turno', 'sql' => 'c.turno', 'value' => 'turno'],
+        'dataInicio' => ['label' => 'Data de início', 'sql' => 'c.dataInicio', 'value' => 'dataInicio', 'format' => 'date'],
+        'dataDesligamento' => ['label' => 'Data de desligamento', 'sql' => 'c.dataDesligamento', 'value' => 'dataDesligamento', 'format' => 'date'],
+        'telefone' => ['label' => 'Telefone', 'sql' => 'c.telefone', 'value' => 'telefone', 'format' => 'phone'],
+        'email' => ['label' => 'E-mail', 'sql' => 'c.email', 'value' => 'email'],
+        'cidade' => ['label' => 'Cidade', 'sql' => 'c.cidade', 'value' => 'cidade'],
+        'uf' => ['label' => 'UF', 'sql' => 'c.uf', 'value' => 'uf'],
+        'usuarioVinculado' => ['label' => 'Usuário vinculado', 'sql' => 'uv.login', 'value' => 'usuarioVinculado'],
+        'status' => ['label' => 'Status', 'sql' => 'c.ativo', 'value' => 'ativo', 'format' => 'status'],
+        'criadoEm' => ['label' => 'Data do cadastro', 'sql' => 'c.criadoEm', 'value' => 'criadoEm', 'format' => 'datetime'],
+        'criadoPor' => ['label' => 'Criado por', 'sql' => 'criador.idUsuario', 'value' => 'criadoPor', 'format' => 'id-name', 'idValue' => 'criadoPorId'],
+        'atualizadoEm' => ['label' => 'Última alteração', 'sql' => 'c.atualizadoEm', 'value' => 'atualizadoEm', 'format' => 'datetime'],
+        'alteradoPor' => ['label' => 'Alterado por', 'sql' => 'alterador.idUsuario', 'value' => 'alteradoPor', 'format' => 'id-name', 'idValue' => 'alteradoPorId'],
+    ],
+];
+require __DIR__ . '/../../../components/gestao-acolhidos/relatorio-engine.php';

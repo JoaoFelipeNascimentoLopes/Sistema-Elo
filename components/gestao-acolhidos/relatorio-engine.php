@@ -5,7 +5,10 @@ if (!isset($reportConfig) || !is_array($reportConfig) || !isset($usuarioAtual)) 
 
 $pdo = appPdo();
 $baseUrl = appBaseUrl();
-$pageUrl = $baseUrl . '/pages/gestao-acolhidos/relatorios/' . $reportConfig['file'];
+$reportModule = (string) ($reportConfig['module'] ?? 'gestao-acolhidos');
+$reportNavbar = (string) ($reportConfig['navbar'] ?? (__DIR__ . '/../../components/gestao-acolhidos/navbar-gestaoacolhidos.php'));
+$reportSidebar = (string) ($reportConfig['sidebar'] ?? (__DIR__ . '/../../components/gestao-acolhidos/sidebar-gestaoacolhidos.php'));
+$pageUrl = $baseUrl . '/pages/' . $reportModule . '/relatorios/' . $reportConfig['file'];
 $columnsAvailable = $reportConfig['columns'];
 $groupsAvailable = [];
 foreach ($columnsAvailable as $columnKey => $column) {
@@ -242,6 +245,19 @@ $columnValue = static function (array $row, string $key) use ($columnsAvailable)
         'date' => date('d/m/Y', strtotime((string) $value)),
         'datetime' => date('d/m/Y H:i', strtotime((string) $value)),
         'currency' => 'R$ ' . number_format((float) $value, 2, ',', '.'),
+        'cpf' => strlen($digits = preg_replace('/\D+/', '', (string) $value) ?? '') === 11
+            ? substr($digits, 0, 3) . '.' . substr($digits, 3, 3) . '.' . substr($digits, 6, 3) . '-' . substr($digits, 9)
+            : (string) $value,
+        'phone' => (static function (string $raw): string {
+            $d = preg_replace('/\D+/', '', $raw) ?? '';
+            if (strlen($d) === 11) {
+                return '(' . substr($d, 0, 2) . ') ' . substr($d, 2, 5) . '-' . substr($d, 7);
+            }
+            if (strlen($d) === 10) {
+                return '(' . substr($d, 0, 2) . ') ' . substr($d, 2, 4) . '-' . substr($d, 6);
+            }
+            return $raw;
+        })((string) $value),
         'id-name' => isset($row[$column['idValue']]) && trim((string) $value) !== ''
             ? $row[$column['idValue']] . ' - ' . trim((string) $value)
             : 'Não informado',
@@ -468,14 +484,13 @@ if ($reportGenerated && !$errors) {
     <link rel="stylesheet" href="<?php echo appEscape($baseUrl . '/assets/css/usuarios-por-perfis.css?v=' . filemtime(__DIR__ . '/../../assets/css/usuarios-por-perfis.css')); ?>">
 </head>
 <body class="flex h-screen flex-col overflow-hidden bg-gray-100 font-sans">
-    <?php include __DIR__ . '/../../components/gestao-acolhidos/navbar-gestaoacolhidos.php'; ?>
+    <?php include $reportNavbar; ?>
     <div class="flex flex-1 overflow-hidden">
-        <?php include __DIR__ . '/../../components/gestao-acolhidos/sidebar-gestaoacolhidos.php'; ?>
+        <?php include $reportSidebar; ?>
         <main class="flex-1 overflow-y-auto bg-gray-50 p-4 md:p-6">
             <div data-report-page-header class="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 class="text-2xl font-bold text-gray-800"><?php echo appEscape($reportConfig['pageTitle']); ?></h1>
-                    <p class="mt-1 text-sm text-gray-500">Configure os filtros, atributos e opções de impressão do relatório.</p>
                 </div>
             </div>
             <form method="post" action="<?php echo appEscape($pageUrl); ?>" id="report-form" class="space-y-4">

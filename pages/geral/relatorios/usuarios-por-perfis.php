@@ -455,7 +455,6 @@ exit;
             <div data-report-page-header class="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 class="text-2xl font-bold text-gray-800">Usuários por Perfis</h1>
-                    <p class="mt-1 text-sm text-gray-500">Configure os filtros, atributos e opções de impressão do relatório.</p>
                 </div>
             </div>
 

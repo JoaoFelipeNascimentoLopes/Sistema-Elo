@@ -124,7 +124,12 @@ function appPageCatalog(): array
         'geral/dashboard-geral.php' => 'Dashboard Geral',
         'geral/cadastros/usuarios.php' => 'Usuários',
         'geral/cadastros/perfis-acesso.php' => 'Perfis de Acesso',
+        'geral/cadastros/colaboradores.php' => 'Colaboradores e Voluntários',
+        'geral/movimentacoes/log-auditoria.php' => 'Log de Auditoria',
+        'geral/movimentacoes/livro-plantao.php' => 'Livro de Plantão e Avisos',
         'geral/relatorios/usuarios-por-perfis.php' => 'Usuários por Perfis',
+        'geral/relatorios/matriz-permissoes.php' => 'Matriz de Permissões por Perfil',
+        'geral/relatorios/colaboradores.php' => 'Colaboradores e Voluntários',
         // Gestão de Acolhidos
         'gestao-acolhidos/dashboard-gestao-acolhidos.php' => 'Dashboard Gestão de Acolhidos',
         'gestao-acolhidos/cadastros/acolhidos.php' => 'Acolhidos',
@@ -497,6 +502,68 @@ function appPasswordPolicyError(string $password): ?string
     }
 
     return null;
+}
+
+function appRegistrarAuditoria(
+    string $modulo,
+    string $acao,
+    string $descricao,
+    ?string $entidade = null,
+    int|string|null $idRegistro = null,
+    ?array $detalhes = null,
+    ?array $usuario = null,
+    ?string $loginInformado = null
+): void {
+    try {
+        $ator = $usuario;
+        if ($ator === null && $loginInformado === null) {
+            $ator = appCurrentUser();
+        }
+        $idUsuario = isset($ator['idUsuario']) ? (int) $ator['idUsuario'] : null;
+        $login = $loginInformado ?? (isset($ator['login']) ? (string) $ator['login'] : null);
+        if ($login !== null) {
+            $login = mb_substr(trim($login), 0, 80, 'UTF-8');
+            if ($login === '') {
+                $login = null;
+            }
+        }
+
+        $modulo = mb_substr(trim($modulo), 0, 50, 'UTF-8');
+        $acao = mb_substr(trim($acao), 0, 50, 'UTF-8');
+        $entidade = $entidade !== null ? mb_substr(trim($entidade), 0, 80, 'UTF-8') : null;
+        $idRegistroTexto = $idRegistro !== null ? mb_substr(trim((string) $idRegistro), 0, 64, 'UTF-8') : null;
+        $descricao = mb_substr(trim($descricao), 0, 255, 'UTF-8');
+        $detalhesJson = $detalhes !== null && $detalhes !== []
+            ? json_encode($detalhes, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE)
+            : null;
+        $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+        $ip = $ip !== '' ? mb_substr($ip, 0, 45, 'UTF-8') : null;
+        $userAgent = trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
+        $userAgent = $userAgent !== '' ? mb_substr($userAgent, 0, 255, 'UTF-8') : null;
+
+        $statement = appPdo()->prepare(
+            'INSERT INTO tbLogAuditoria
+                (idUsuario, loginInformado, modulo, acao, entidade, idRegistro,
+                 descricao, detalhesJson, enderecoIp, userAgent)
+             VALUES
+                (:idUsuario, :loginInformado, :modulo, :acao, :entidade, :idRegistro,
+                 :descricao, :detalhesJson, :enderecoIp, :userAgent)'
+        );
+        $statement->execute([
+            'idUsuario' => $idUsuario,
+            'loginInformado' => $login,
+            'modulo' => $modulo,
+            'acao' => $acao,
+            'entidade' => $entidade,
+            'idRegistro' => $idRegistroTexto,
+            'descricao' => $descricao,
+            'detalhesJson' => $detalhesJson,
+            'enderecoIp' => $ip,
+            'userAgent' => $userAgent,
+        ]);
+    } catch (Throwable $exception) {
+        error_log('Falha ao registrar log de auditoria: ' . $exception->getMessage());
+    }
 }
 
 function appJavascriptVersion(): string

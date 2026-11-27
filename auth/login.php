@@ -27,6 +27,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $user = $query->fetch();
 
     if ($user && password_verify($password, $user['senhaHash']) && (int) $user['bloqueado'] === 1) {
+        appRegistrarAuditoria(
+            'auth',
+            'login_bloqueado',
+            'Tentativa de login com conta bloqueada.',
+            'tbUsuario',
+            (int) $user['idUsuario'],
+            ['login' => $login],
+            ['idUsuario' => (int) $user['idUsuario'], 'login' => $login],
+            $login
+        );
         $error = 'Esta conta está bloqueada. Entre em contato com um administrador.';
     } elseif ($user && (int) $user['ativo'] === 1 && password_verify($password, $user['senhaHash'])) {
         $tabToken = appCurrentTabToken();
@@ -43,14 +53,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $targetUrl = $authenticatedUser ? appFirstAllowedUrl($authenticatedUser) : null;
             if ($targetUrl !== null) {
+                appRegistrarAuditoria(
+                    'auth',
+                    'login_sucesso',
+                    'Login realizado com sucesso.',
+                    'tbUsuario',
+                    (int) $authenticatedUser['idUsuario'],
+                    [
+                        'perfil' => $authenticatedUser['nomePerfil'],
+                        'trocaSenhaObrigatoria' => (int) $user['forcarTrocaSenha'] === 1,
+                    ],
+                    $authenticatedUser
+                );
                 header('Location: ' . appTabUrl($targetUrl));
                 exit;
             }
 
             unset($_SESSION['tabSessions'][$tabToken]);
+            appRegistrarAuditoria(
+                'auth',
+                'login_falha',
+                'Login negado: perfil sem telas liberadas.',
+                'tbUsuario',
+                (int) $user['idUsuario'],
+                ['motivo' => 'perfil_sem_acesso'],
+                ['idUsuario' => (int) $user['idUsuario'], 'login' => $login],
+                $login
+            );
             $error = 'Este perfil ainda não possui acesso a nenhuma tela.';
         }
     } else {
+        appRegistrarAuditoria(
+            'auth',
+            'login_falha',
+            'Tentativa de login com credenciais inválidas ou usuário inativo.',
+            'tbUsuario',
+            $user ? (int) $user['idUsuario'] : null,
+            ['usuarioEncontrado' => (bool) $user],
+            $user ? ['idUsuario' => (int) $user['idUsuario'], 'login' => $login] : null,
+            $login
+        );
         $error = 'Login ou senha inválidos, ou usuário inativo.';
     }
 }

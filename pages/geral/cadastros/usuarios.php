@@ -130,6 +130,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'idUsuario' => $idUsuario,
                 ];
                 $statement->execute($parameters);
+                appRegistrarAuditoria(
+                    'geral',
+                    'editar',
+                    'Usuário atualizado: ' . $login . '.',
+                    'tbUsuario',
+                    $idUsuario,
+                    [
+                        'login' => $login,
+                        'nomeCompleto' => $nome,
+                        'idPerfil' => $idPerfil,
+                        'ativo' => (bool) $ativo,
+                        'bloqueado' => (bool) $bloqueado,
+                        'forcarTrocaSenha' => (bool) $forcarTrocaSenha,
+                        'tempoExpiracaoSessao' => $tempoExpiracaoSessao,
+                        'senhaRedefinida' => $senha !== '',
+                    ],
+                    $usuarioAtual
+                );
                 header('Location: ' . appTabUrl('usuarios.php?resultado=atualizado'));
                 exit;
             }
@@ -155,6 +173,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'forcarTrocaSenha' => $forcarTrocaSenha,
                 'tempoExpiracaoSessao' => $tempoExpiracaoSessao,
             ]);
+            $novoIdUsuario = (int) $pdo->lastInsertId();
+            appRegistrarAuditoria(
+                'geral',
+                'criar',
+                'Usuário cadastrado: ' . $login . '.',
+                'tbUsuario',
+                $novoIdUsuario,
+                [
+                    'login' => $login,
+                    'nomeCompleto' => $nome,
+                    'idPerfil' => $idPerfil,
+                    'ativo' => (bool) $ativo,
+                    'bloqueado' => (bool) $bloqueado,
+                    'forcarTrocaSenha' => (bool) $forcarTrocaSenha,
+                    'tempoExpiracaoSessao' => $tempoExpiracaoSessao,
+                ],
+                $usuarioAtual
+            );
             header('Location: ' . appTabUrl('usuarios.php?resultado=criado'));
             exit;
         }
@@ -181,6 +217,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $delete = $pdo->prepare('DELETE FROM tbUsuario WHERE idUsuario = :idUsuario');
             $delete->execute(['idUsuario' => $idUsuario]);
+            appRegistrarAuditoria(
+                'geral',
+                'excluir',
+                'Usuário excluído: ' . $userToDelete['login'] . '.',
+                'tbUsuario',
+                $idUsuario,
+                ['login' => $userToDelete['login']],
+                $usuarioAtual
+            );
             header('Location: ' . appTabUrl('usuarios.php?resultado=excluido'));
             exit;
         }

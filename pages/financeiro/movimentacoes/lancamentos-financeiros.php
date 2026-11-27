@@ -551,8 +551,7 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
     <div class="flex flex-1 overflow-hidden">
         <?php include __DIR__ . '/../../../components/financeiro/sidebar-financeiro.php'; ?>
         <main class="flex-1 overflow-y-auto bg-gray-50 p-4 md:p-6">
-            <h1 class="mb-2 text-2xl font-bold text-gray-800">Lançamentos Financeiros</h1>
-            <p class="mb-6 text-sm text-gray-600">Registre entradas e saídas. Os valores pendentes podem ser incluídos na visão das metas orçamentárias.</p>
+            <h1 class="mb-6 text-2xl font-bold text-gray-800">Lançamentos Financeiros</h1>
             <?php include __DIR__ . '/../../../components/tabs-pesquisa-manutencao.php'; ?>
             <section id="painel-manutencao" role="tabpanel" aria-labelledby="tab-manutencao" class="mb-8 rounded-lg border border-gray-200 bg-white p-5 shadow-sm" <?php echo $abaInicial === 'manutencao' ? '' : 'hidden'; ?>>
                 <h2 class="mb-4 text-lg font-semibold"><?php echo !empty($lancamentoEdicao['idLancamento']) ? 'Alterar lançamento' : 'Novo lançamento'; ?></h2>

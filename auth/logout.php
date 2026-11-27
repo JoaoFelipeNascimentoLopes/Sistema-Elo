@@ -7,6 +7,18 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 appValidateCsrf();
+$usuarioAtual = appCurrentUser();
+if ($usuarioAtual !== null) {
+    appRegistrarAuditoria(
+        'auth',
+        'logout',
+        'Sessão encerrada pelo usuário.',
+        'tbUsuario',
+        (int) $usuarioAtual['idUsuario'],
+        null,
+        $usuarioAtual
+    );
+}
 $tabToken = appCurrentTabToken();
 if ($tabToken !== null) {
     unset($_SESSION['tabSessions'][$tabToken]);

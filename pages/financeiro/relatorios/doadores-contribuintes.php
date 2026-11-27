@@ -534,7 +534,6 @@ if ($reportGenerated && !$errors && ($_POST['reportAction'] ?? '') === 'download
             <div data-report-page-header class="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 class="text-2xl font-bold text-gray-800"><?php echo appEscape($reportConfig['pageTitle']); ?></h1>
-                    <p class="mt-1 text-sm text-gray-500">Configure os filtros, atributos e opções de impressão do relatório.</p>
                 </div>
             </div>
             <form method="post" action="<?php echo appEscape($pageUrl); ?>" id="report-form" class="space-y-4">

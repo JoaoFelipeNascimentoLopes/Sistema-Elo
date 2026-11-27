@@ -45,6 +45,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $passwordHash = $query->fetchColumn();
 
         if (!is_string($passwordHash) || !password_verify($currentPassword, $passwordHash)) {
+            appRegistrarAuditoria(
+                'auth',
+                'troca_senha_falha',
+                'Tentativa de alteração de senha com senha atual incorreta.',
+                'tbUsuario',
+                (int) $user['idUsuario'],
+                null,
+                $user
+            );
             $error = 'A senha atual está incorreta.';
         } else {
             $update = appPdo()->prepare(
@@ -59,6 +68,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tabToken = appCurrentTabToken();
             $_SESSION['tabSessions'][$tabToken]['mustChangePassword'] = 0;
             session_regenerate_id(false);
+            appRegistrarAuditoria(
+                'auth',
+                'troca_senha',
+                $forcedChange ? 'Troca obrigatória de senha concluída.' : 'Senha alterada pelo próprio usuário.',
+                'tbUsuario',
+                (int) $user['idUsuario'],
+                ['trocaObrigatoria' => $forcedChange],
+                $user
+            );
             $respond(200, ['success' => true, 'message' => 'Senha alterada com sucesso.']);
         }
     }

@@ -57,14 +57,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($idPerfil > 0) {
                 $existingProfile = $pdo->prepare(
-                    'SELECT administradorGlobal FROM tbPerfilAcesso WHERE idPerfil = :idPerfil'
+                    'SELECT nomePerfil, administradorGlobal FROM tbPerfilAcesso WHERE idPerfil = :idPerfil'
                 );
                 $existingProfile->execute(['idPerfil' => $idPerfil]);
-                $isGlobal = $existingProfile->fetchColumn();
-                if ($isGlobal === false) {
+                $existingProfileRow = $existingProfile->fetch();
+                if (!$existingProfileRow) {
                     throw new InvalidArgumentException('Perfil não encontrado.');
                 }
-                if ((int) $isGlobal === 1) {
+                if ((int) $existingProfileRow['administradorGlobal'] === 1) {
                     if (!appIsPrimaryAdmin($usuarioAtual)) {
                         throw new InvalidArgumentException('Somente o login admin-global pode alterar este perfil.');
                     }
@@ -75,6 +75,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'permissoes' => json_encode($permissoes, JSON_THROW_ON_ERROR),
                         'idPerfil' => $idPerfil,
                     ]);
+                    appRegistrarAuditoria(
+                        'geral',
+                        'editar',
+                        'Permissões do perfil global atualizadas: ' . $existingProfileRow['nomePerfil'] . '.',
+                        'tbPerfilAcesso',
+                        $idPerfil,
+                        [
+                            'nomePerfil' => $existingProfileRow['nomePerfil'],
+                            'administradorGlobal' => true,
+                            'modulosLiberados' => array_keys($permissoes),
+                        ],
+                        $usuarioAtual
+                    );
                     header('Location: ' . appTabUrl('perfis-acesso.php?resultado=atualizado'));
                     exit;
                 }
@@ -86,6 +99,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'permissoes' => json_encode($permissoes, JSON_THROW_ON_ERROR),
                     'idPerfil' => $idPerfil,
                 ]);
+                appRegistrarAuditoria(
+                    'geral',
+                    'editar',
+                    'Perfil de acesso atualizado: ' . $nome . '.',
+                    'tbPerfilAcesso',
+                    $idPerfil,
+                    [
+                        'nomePerfil' => $nome,
+                        'modulosLiberados' => array_keys($permissoes),
+                        'totalTelas' => array_sum(array_map('count', $permissoes)),
+                    ],
+                    $usuarioAtual
+                );
                 header('Location: ' . appTabUrl('perfis-acesso.php?resultado=atualizado'));
                 exit;
             }
@@ -98,6 +124,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'nome' => $nome,
                 'permissoes' => json_encode($permissoes, JSON_THROW_ON_ERROR),
             ]);
+            $novoIdPerfil = (int) $pdo->lastInsertId();
+            appRegistrarAuditoria(
+                'geral',
+                'criar',
+                'Perfil de acesso criado: ' . $nome . '.',
+                'tbPerfilAcesso',
+                $novoIdPerfil,
+                [
+                    'nomePerfil' => $nome,
+                    'modulosLiberados' => array_keys($permissoes),
+                    'totalTelas' => array_sum(array_map('count', $permissoes)),
+                ],
+                $usuarioAtual
+            );
             header('Location: ' . appTabUrl('perfis-acesso.php?resultado=criado'));
             exit;
         }
@@ -108,11 +148,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new InvalidArgumentException('Perfil inválido.');
             }
             $profileCheck = $pdo->prepare(
-                'SELECT administradorGlobal FROM tbPerfilAcesso WHERE idPerfil = :idPerfil'
+                'SELECT nomePerfil, administradorGlobal FROM tbPerfilAcesso WHERE idPerfil = :idPerfil'
             );
             $profileCheck->execute(['idPerfil' => $idPerfil]);
-            $isGlobal = $profileCheck->fetchColumn();
-            if ($isGlobal === false || (int) $isGlobal === 1) {
+            $profileRow = $profileCheck->fetch();
+            if (!$profileRow || (int) $profileRow['administradorGlobal'] === 1) {
                 throw new InvalidArgumentException('O perfil de Administração Global é protegido.');
             }
             $userCount = $pdo->prepare('SELECT COUNT(*) FROM tbUsuario WHERE idPerfil = :idPerfil');
@@ -122,6 +162,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $delete = $pdo->prepare('DELETE FROM tbPerfilAcesso WHERE idPerfil = :idPerfil');
             $delete->execute(['idPerfil' => $idPerfil]);
+            appRegistrarAuditoria(
+                'geral',
+                'excluir',
+                'Perfil de acesso excluído: ' . $profileRow['nomePerfil'] . '.',
+                'tbPerfilAcesso',
+                $idPerfil,
+                ['nomePerfil' => $profileRow['nomePerfil']],
+                $usuarioAtual
+            );
             header('Location: ' . appTabUrl('perfis-acesso.php?resultado=excluido'));
             exit;
         }

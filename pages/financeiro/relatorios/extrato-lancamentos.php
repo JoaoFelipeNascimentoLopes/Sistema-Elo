@@ -142,7 +142,6 @@ $baseUrl = appBaseUrl();
             <header class="no-print mb-5 flex flex-wrap items-end justify-between gap-3">
                 <div>
                     <h1 class="text-2xl font-bold text-gray-800">Extrato de Lançamentos</h1>
-                    <p class="mt-1 text-sm text-gray-500">Folha de movimentação financeira por período, em formato de extrato contábil.</p>
                 </div>
                 <?php if ($gerarRelatorio && $erro === ''): ?>
                     <button type="button" onclick="window.print()" class="inline-flex items-center gap-2 rounded bg-elo-teal px-4 py-2 text-sm font-medium text-white hover:bg-elo-green">

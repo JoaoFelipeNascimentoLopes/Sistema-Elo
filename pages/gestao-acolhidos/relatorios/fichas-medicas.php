@@ -189,7 +189,6 @@ if ($idAcolhido !== null) {
         <main class="flex-1 overflow-y-auto bg-gray-50 p-4 md:p-6">
             <div data-print-hidden class="mb-5">
                 <h1 class="text-2xl font-bold text-gray-800">Ficha do Acolhido</h1>
-                <p class="mt-1 text-sm text-gray-500">Dados cadastrais e histórico médico do acolhido selecionado.</p>
             </div>
             <?php if ($erro !== ''): ?>
                 <p role="alert" class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><?php echo appEscape($erro); ?></p>
