@@ -306,7 +306,6 @@ $abaInicial = ($formEnviado && $erro !== '') || in_array($_GET['aba'] ?? null, [
                 <section class="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                     <div class="bg-gradient-to-r from-elo-teal to-elo-green p-5 text-white md:flex md:items-center md:justify-between md:gap-6 md:p-7">
                         <div>
-                            <p class="mb-1 text-sm font-medium text-white/80">Visão geral da casa</p>
                             <h2 class="text-2xl font-bold">Mapa de acomodações</h2>
                         </div>
                         <button type="button" data-tab-open="manutencao" class="mt-4 inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-elo-teal shadow-sm transition hover:bg-teal-50 md:mt-0">
@@ -315,11 +314,11 @@ $abaInicial = ($formEnviado && $erro !== '') || in_array($_GET['aba'] ?? null, [
                     </div>
                     <div class="p-4 md:p-6">
                         <div class="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
-                            <div class="rounded-xl border border-gray-200 bg-gray-50 p-4"><p class="text-xs font-medium uppercase tracking-wide text-gray-500">Leitos cadastrados</p><p class="mt-1 text-2xl font-bold text-gray-800"><?php echo $resumoMapa['total']; ?></p></div>
-                            <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p class="text-xs font-medium uppercase tracking-wide text-emerald-700">Disponíveis</p><p class="mt-1 text-2xl font-bold text-emerald-800"><?php echo $resumoMapa['disponiveis']; ?></p></div>
-                            <div class="rounded-xl border border-blue-200 bg-blue-50 p-4"><p class="text-xs font-medium uppercase tracking-wide text-blue-700">Ocupados</p><p class="mt-1 text-2xl font-bold text-blue-800"><?php echo $resumoMapa['ocupados']; ?></p></div>
-                            <div class="rounded-xl border border-amber-200 bg-amber-50 p-4"><p class="text-xs font-medium uppercase tracking-wide text-amber-700">Em manutenção</p><p class="mt-1 text-2xl font-bold text-amber-800"><?php echo $resumoMapa['manutencao']; ?></p></div>
-                            <div class="rounded-xl border border-gray-200 bg-gray-100 p-4"><p class="text-xs font-medium uppercase tracking-wide text-gray-600">Inativos</p><p class="mt-1 text-2xl font-bold text-gray-700"><?php echo $resumoMapa['inativos']; ?></p></div>
+                            <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-200 text-gray-600"><i class="ph ph-bed text-xl" aria-hidden="true"></i></div><div><p class="text-xs font-medium uppercase tracking-wide text-gray-500">Leitos cadastrados</p><p class="mt-1 text-2xl font-bold text-gray-800"><?php echo $resumoMapa['total']; ?></p></div></div>
+                            <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-200 text-emerald-600"><i class="ph ph-plus-circle text-xl" aria-hidden="true"></i></div><div><p class="text-xs font-medium uppercase tracking-wide text-emerald-700">Disponíveis</p><p class="mt-1 text-2xl font-bold text-emerald-800"><?php echo $resumoMapa['disponiveis']; ?></p></div></div>
+                            <div class="rounded-xl border border-blue-200 bg-blue-50 p-4 flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-200 text-blue-600"><i class="ph ph-user text-xl" aria-hidden="true"></i></div><div><p class="text-xs font-medium uppercase tracking-wide text-blue-700">Ocupados</p><p class="mt-1 text-2xl font-bold text-blue-800"><?php echo $resumoMapa['ocupados']; ?></p></div></div>
+                            <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-200 text-amber-600"><i class="ph ph-wrench text-xl" aria-hidden="true"></i></div><div><p class="text-xs font-medium uppercase tracking-wide text-amber-700">Em manutenção</p><p class="mt-1 text-2xl font-bold text-amber-800"><?php echo $resumoMapa['manutencao']; ?></p></div></div>
+                            <div class="rounded-xl border border-gray-200 bg-gray-100 p-4 flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-200 text-gray-500"><i class="ph ph-bed text-xl" aria-hidden="true"></i></div><div><p class="text-xs font-medium uppercase tracking-wide text-gray-600">Inativos</p><p class="mt-1 text-2xl font-bold text-gray-700"><?php echo $resumoMapa['inativos']; ?></p></div></div>
                         </div>
                         <?php if ($todosLeitosCheios): ?><p role="status" class="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><i class="ph ph-warning-circle mr-1 align-middle text-lg" aria-hidden="true"></i>Todos os leitos ativos estão ocupados.</p><?php endif; ?>
 
@@ -377,7 +376,7 @@ $abaInicial = ($formEnviado && $erro !== '') || in_array($_GET['aba'] ?? null, [
                                                     <?php if (!$quarto['leitos']): ?>
                                                         <p class="rounded-lg bg-gray-50 p-3 text-sm text-gray-500">Nenhum leito cadastrado neste quarto.</p>
                                                     <?php else: ?>
-                                                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
                                                             <?php foreach ($quarto['leitos'] as $leitoMapa):
                                                                 $classesLeito = 'border-gray-200 bg-white text-gray-700';
                                                                 $classesStatus = 'bg-gray-100 text-gray-700';
