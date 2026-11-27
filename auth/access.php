@@ -125,6 +125,10 @@ function appPageCatalog(): array
         'geral/cadastros/usuarios.php' => 'Usuários',
         'geral/cadastros/perfis-acesso.php' => 'Perfis de Acesso',
         'geral/cadastros/colaboradores.php' => 'Colaboradores e Voluntários',
+        'geral/cadastros/cracha-colaborador.php' => 'Crachá do Colaborador',
+        'geral/cadastros/documentos-institucionais.php' => 'Documentos e Certidões',
+        'geral/movimentacoes/agenda-institucional.php' => 'Agenda Institucional',
+        'geral/movimentacoes/escala-plantoes.php' => 'Escala de Plantões',
         'geral/movimentacoes/log-auditoria.php' => 'Log de Auditoria',
         'geral/movimentacoes/livro-plantao.php' => 'Livro de Plantão e Avisos',
         'geral/relatorios/usuarios-por-perfis.php' => 'Usuários por Perfis',
@@ -245,7 +249,8 @@ function appPageCatalog(): array
                 'url' => "$base/pages/$moduleKey/$relativeUrl.php",
                 'arquivo' => $relativePath,
             ];
-            if ($moduleKey === 'gestao-acolhidos' && $relativePath === 'relatorios/fichas-medicas.php') {
+            if (($moduleKey === 'gestao-acolhidos' && $relativePath === 'relatorios/fichas-medicas.php')
+                || ($moduleKey === 'geral' && $relativePath === 'cadastros/cracha-colaborador.php')) {
                 $catalog[$moduleKey]['paginas'][$pageKey]['mostrarNoMenu'] = false;
             }
         }
@@ -504,6 +509,105 @@ function appPasswordPolicyError(string $password): ?string
     return null;
 }
 
+function appAuditoriaLogDirectory(): string
+{
+    return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'logs';
+}
+
+function appObterConfiguracaoAuditoria(): array
+{
+    static $cache = null;
+    if (is_array($cache)) {
+        return $cache;
+    }
+
+    $defaults = [
+        'gravarArquivoLog' => 1,
+        'retencaoDias' => null,
+        'ultimaLimpezaEm' => null,
+    ];
+    try {
+        $row = appPdo()->query(
+            'SELECT gravarArquivoLog, retencaoDias, ultimaLimpezaEm
+             FROM tbConfiguracaoAuditoria
+             WHERE idConfiguracao = 1
+             LIMIT 1'
+        )->fetch(PDO::FETCH_ASSOC);
+        if (is_array($row)) {
+            $cache = [
+                'gravarArquivoLog' => (int) ($row['gravarArquivoLog'] ?? 1),
+                'retencaoDias' => $row['retencaoDias'] !== null ? (int) $row['retencaoDias'] : null,
+                'ultimaLimpezaEm' => $row['ultimaLimpezaEm'] !== null ? (string) $row['ultimaLimpezaEm'] : null,
+            ];
+            return $cache;
+        }
+    } catch (Throwable) {
+    }
+    return $defaults;
+}
+
+function appGravarLinhaArquivoLog(
+    ?int $idUsuario,
+    ?string $login,
+    string $modulo,
+    string $acao,
+    ?string $entidade,
+    ?string $idRegistro,
+    string $descricao,
+    ?string $detalhesJson,
+    ?string $ip
+): void {
+    try {
+        $dir = appAuditoriaLogDirectory();
+        if (!is_dir($dir) && !@mkdir($dir, 0750, true) && !is_dir($dir)) {
+            return;
+        }
+        $htaccess = $dir . DIRECTORY_SEPARATOR . '.htaccess';
+        if (!is_file($htaccess)) {
+            @file_put_contents($htaccess, "Require all denied\n");
+        }
+        $logFile = $dir . DIRECTORY_SEPARATOR . 'auditoria-' . date('Y-m') . '.log';
+        $atorTxt = ($idUsuario !== null ? '#' . $idUsuario : '-') . ':' . ($login ?? 'anonimo');
+        $entTxt = $entidade !== null ? ($entidade . ($idRegistro !== null ? '#' . $idRegistro : '')) : '-';
+        $descLimpa = preg_replace('/[\r\n]+/', ' ', $descricao) ?? $descricao;
+        $line = sprintf(
+            "[%s] [modulo=%s] [acao=%s] [usuario=%s] [ip=%s] [entidade=%s] %s%s\n",
+            date('Y-m-d H:i:s'),
+            $modulo,
+            $acao,
+            $atorTxt,
+            $ip ?? '-',
+            $entTxt,
+            $descLimpa,
+            $detalhesJson !== null ? ' | detalhes=' . $detalhesJson : ''
+        );
+        @file_put_contents($logFile, $line, FILE_APPEND | LOCK_EX);
+    } catch (Throwable) {
+    }
+}
+
+function appExecutarLimpezaRetencaoAuditoria(?int $diasForcados = null): int
+{
+    $cfg = appObterConfiguracaoAuditoria();
+    $dias = $diasForcados ?? $cfg['retencaoDias'];
+    if ($dias === null || $dias < 1) {
+        return 0;
+    }
+    if ($diasForcados === null && $cfg['ultimaLimpezaEm'] !== null) {
+        $ts = strtotime($cfg['ultimaLimpezaEm']);
+        if ($ts !== false && (time() - $ts) < 21600) {
+            return 0;
+        }
+    }
+    $pdo = appPdo();
+    $del = $pdo->prepare('DELETE FROM tbLogAuditoria WHERE dataHora < DATE_SUB(NOW(), INTERVAL :dias DAY)');
+    $del->bindValue(':dias', $dias, PDO::PARAM_INT);
+    $del->execute();
+    $removidos = $del->rowCount();
+    $pdo->exec('UPDATE tbConfiguracaoAuditoria SET ultimaLimpezaEm = NOW() WHERE idConfiguracao = 1');
+    return $removidos;
+}
+
 function appRegistrarAuditoria(
     string $modulo,
     string $acao,
@@ -561,6 +665,14 @@ function appRegistrarAuditoria(
             'enderecoIp' => $ip,
             'userAgent' => $userAgent,
         ]);
+
+        $cfgAuditoria = appObterConfiguracaoAuditoria();
+        if ((int) ($cfgAuditoria['gravarArquivoLog'] ?? 1) === 1) {
+            appGravarLinhaArquivoLog($idUsuario, $login, $modulo, $acao, $entidade, $idRegistroTexto, $descricao, $detalhesJson, $ip);
+        }
+        if ($cfgAuditoria['retencaoDias'] !== null && (int) $cfgAuditoria['retencaoDias'] > 0) {
+            appExecutarLimpezaRetencaoAuditoria();
+        }
     } catch (Throwable $exception) {
         error_log('Falha ao registrar log de auditoria: ' . $exception->getMessage());
     }

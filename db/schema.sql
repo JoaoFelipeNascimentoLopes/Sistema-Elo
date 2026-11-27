@@ -482,6 +482,7 @@ CREATE TABLE IF NOT EXISTS tbColaborador (
     cpf CHAR(11) NOT NULL,
     rg VARCHAR(30) NULL,
     dataNascimento DATE NULL,
+    caminhoFoto VARCHAR(255) NULL,
     tipoVinculo ENUM('Colaborador', 'Voluntário', 'Estagiário', 'Terceirizado') NOT NULL DEFAULT 'Colaborador',
     cargoFuncao VARCHAR(100) NOT NULL,
     registroProfissional VARCHAR(50) NULL,
@@ -566,3 +567,122 @@ CREATE TABLE IF NOT EXISTS tbRegistroPlantao (
         FOREIGN KEY (idUsuarioAlteracao) REFERENCES tbUsuario (idUsuario)
         ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tbEscalaPlantao (
+    idEscala INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    idColaborador INT UNSIGNED NOT NULL,
+    dataPlantao DATE NOT NULL,
+    turno ENUM('Manhã', 'Tarde', 'Noite', 'Integral') NOT NULL DEFAULT 'Manhã',
+    statusEscala ENUM('Confirmado', 'Troca', 'Folga', 'Falta', 'Férias') NOT NULL DEFAULT 'Confirmado',
+    horaInicio TIME NULL,
+    horaFim TIME NULL,
+    observacoes VARCHAR(255) NULL,
+    idUsuarioCriacao INT UNSIGNED NOT NULL,
+    idUsuarioAlteracao INT UNSIGNED NULL,
+    criadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (idEscala),
+    UNIQUE KEY uq_tbEscalaPlantao_colab_data_turno (idColaborador, dataPlantao, turno),
+    KEY idx_tbEscalaPlantao_data_turno (dataPlantao, turno),
+    KEY idx_tbEscalaPlantao_status (statusEscala),
+    KEY idx_tbEscalaPlantao_idUsuarioCriacao (idUsuarioCriacao),
+    KEY idx_tbEscalaPlantao_idUsuarioAlteracao (idUsuarioAlteracao),
+    CONSTRAINT fk_tbEscalaPlantao_colaborador
+        FOREIGN KEY (idColaborador) REFERENCES tbColaborador (idColaborador)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_tbEscalaPlantao_usuarioCriacao
+        FOREIGN KEY (idUsuarioCriacao) REFERENCES tbUsuario (idUsuario)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_tbEscalaPlantao_usuarioAlteracao
+        FOREIGN KEY (idUsuarioAlteracao) REFERENCES tbUsuario (idUsuario)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tbAgendaEvento (
+    idEvento INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    titulo VARCHAR(150) NOT NULL,
+    categoria ENUM('Reunião', 'Vistoria / Órgão Público', 'Audiência / Judicial', 'Treinamento', 'Evento / Comemorativo', 'Manutenção', 'Outro') NOT NULL DEFAULT 'Reunião',
+    statusEvento ENUM('Agendado', 'Confirmado', 'Concluído', 'Cancelado') NOT NULL DEFAULT 'Agendado',
+    dataEvento DATE NOT NULL,
+    diaInteiro TINYINT(1) NOT NULL DEFAULT 0,
+    horaInicio TIME NULL,
+    horaFim TIME NULL,
+    localEvento VARCHAR(150) NULL,
+    descricao TEXT NULL,
+    idUsuarioCriacao INT UNSIGNED NOT NULL,
+    idUsuarioAlteracao INT UNSIGNED NULL,
+    criadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (idEvento),
+    KEY idx_tbAgendaEvento_data_status (dataEvento, statusEvento),
+    KEY idx_tbAgendaEvento_categoria (categoria),
+    KEY idx_tbAgendaEvento_idUsuarioCriacao (idUsuarioCriacao),
+    KEY idx_tbAgendaEvento_idUsuarioAlteracao (idUsuarioAlteracao),
+    CONSTRAINT fk_tbAgendaEvento_usuarioCriacao
+        FOREIGN KEY (idUsuarioCriacao) REFERENCES tbUsuario (idUsuario)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_tbAgendaEvento_usuarioAlteracao
+        FOREIGN KEY (idUsuarioAlteracao) REFERENCES tbUsuario (idUsuario)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tbAgendaEventoParticipante (
+    idEvento INT UNSIGNED NOT NULL,
+    idColaborador INT UNSIGNED NOT NULL,
+    criadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (idEvento, idColaborador),
+    KEY idx_tbAgendaEventoParticipante_colaborador (idColaborador),
+    CONSTRAINT fk_tbAgendaEventoParticipante_evento
+        FOREIGN KEY (idEvento) REFERENCES tbAgendaEvento (idEvento)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_tbAgendaEventoParticipante_colaborador
+        FOREIGN KEY (idColaborador) REFERENCES tbColaborador (idColaborador)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tbDocumentoInstitucional (
+    idDocumento INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    titulo VARCHAR(150) NOT NULL,
+    categoria ENUM('Alvará Sanitário', 'AVCB / Bombeiros', 'CMAS / CMDCA', 'Certidão Negativa (CND)', 'Estatuto / Regimento', 'Ata da Diretoria', 'Convênio / Parceria', 'Licença / Outros') NOT NULL DEFAULT 'Certidão Negativa (CND)',
+    numeroDocumento VARCHAR(80) NULL,
+    orgaoEmissor VARCHAR(120) NULL,
+    dataEmissao DATE NULL,
+    dataValidade DATE NULL,
+    semValidade TINYINT(1) NOT NULL DEFAULT 0,
+    diasAlertaAntes SMALLINT UNSIGNED NOT NULL DEFAULT 30,
+    caminhoArquivo VARCHAR(255) NULL,
+    nomeOriginalArquivo VARCHAR(255) NULL,
+    observacoes VARCHAR(500) NULL,
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    idUsuarioCriacao INT UNSIGNED NOT NULL,
+    idUsuarioAlteracao INT UNSIGNED NULL,
+    criadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (idDocumento),
+    KEY idx_tbDocumentoInstitucional_validade_ativo (ativo, semValidade, dataValidade),
+    KEY idx_tbDocumentoInstitucional_categoria (categoria),
+    KEY idx_tbDocumentoInstitucional_idUsuarioCriacao (idUsuarioCriacao),
+    KEY idx_tbDocumentoInstitucional_idUsuarioAlteracao (idUsuarioAlteracao),
+    CONSTRAINT fk_tbDocumentoInstitucional_usuarioCriacao
+        FOREIGN KEY (idUsuarioCriacao) REFERENCES tbUsuario (idUsuario)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_tbDocumentoInstitucional_usuarioAlteracao
+        FOREIGN KEY (idUsuarioAlteracao) REFERENCES tbUsuario (idUsuario)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tbConfiguracaoAuditoria (
+    idConfiguracao TINYINT UNSIGNED NOT NULL,
+    gravarArquivoLog TINYINT(1) NOT NULL DEFAULT 1,
+    retencaoDias SMALLINT UNSIGNED NULL DEFAULT NULL,
+    ultimaLimpezaEm DATETIME NULL DEFAULT NULL,
+    idUsuarioAlteracao INT UNSIGNED NULL DEFAULT NULL,
+    atualizadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (idConfiguracao),
+    CONSTRAINT fk_tbConfiguracaoAuditoria_usuarioAlteracao
+        FOREIGN KEY (idUsuarioAlteracao) REFERENCES tbUsuario (idUsuario)
+        ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO tbConfiguracaoAuditoria (idConfiguracao, gravarArquivoLog, retencaoDias)
+VALUES (1, 1, NULL);

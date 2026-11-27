@@ -14,6 +14,9 @@ $dataExtenso = $hoje->format('d') . ' de ' . $meses[(int) $hoje->format('n')] . 
 $formatarMoeda = static fn(float $valor): string => 'R$ ' . number_format($valor, 2, ',', '.');
 
 $podeVerPlantao = appCanAccess('geral.movimentacoes/livro-plantao', $usuarioAtual);
+$podeVerEscala = appCanAccess('geral.movimentacoes/escala-plantoes', $usuarioAtual);
+$podeVerAgenda = appCanAccess('geral.movimentacoes/agenda-institucional', $usuarioAtual);
+$podeVerDocumentos = appCanAccess('geral.cadastros/documentos-institucionais', $usuarioAtual);
 $podeVerColaboradores = appCanAccess('geral.cadastros/colaboradores', $usuarioAtual);
 $podeVerUsuarios = appCanAccess('geral.usuarios', $usuarioAtual);
 $podeVerAuditoria = appCanAccess('geral.movimentacoes/log-auditoria', $usuarioAtual);
@@ -87,6 +90,88 @@ $destaquesPlantao = $pdo->query(
      LIMIT 6"
 )->fetchAll(PDO::FETCH_ASSOC);
 
+$plantonistasHoje = $pdo->query(
+    "SELECT e.idEscala, e.turno, e.statusEscala, e.horaInicio, e.horaFim,
+            c.idColaborador, c.nomeCompleto, c.cargoFuncao, c.caminhoFoto
+     FROM tbEscalaPlantao e
+     INNER JOIN tbColaborador c ON c.idColaborador = e.idColaborador
+     WHERE e.dataPlantao = CURDATE()
+       AND e.statusEscala IN ('Confirmado', 'Troca')
+     ORDER BY FIELD(e.turno, 'Manhã', 'Tarde', 'Noite', 'Integral'), c.nomeCompleto"
+)->fetchAll(PDO::FETCH_ASSOC);
+
+$meuColabStmt = $pdo->prepare('SELECT idColaborador FROM tbColaborador WHERE idUsuario = :uid LIMIT 1');
+$meuColabStmt->execute(['uid' => (int) $usuarioAtual['idUsuario']]);
+$meuIdColaborador = (int) ($meuColabStmt->fetchColumn() ?: 0);
+
+$agendaStmt = $pdo->prepare(
+    "SELECT e.idEvento, e.titulo, e.categoria, e.statusEvento, e.dataEvento, e.diaInteiro,
+            e.horaInicio, e.horaFim, e.localEvento,
+            EXISTS (
+                SELECT 1 FROM tbAgendaEventoParticipante p
+                WHERE p.idEvento = e.idEvento AND p.idColaborador = :meuColab
+            ) AS euEnvolvido
+     FROM tbAgendaEvento e
+     WHERE e.dataEvento >= CURDATE()
+       AND e.statusEvento IN ('Agendado', 'Confirmado')
+       AND (:verAgenda = 1 OR EXISTS (
+            SELECT 1 FROM tbAgendaEventoParticipante p2
+            WHERE p2.idEvento = e.idEvento AND p2.idColaborador = :meuColab2
+       ))
+     ORDER BY euEnvolvido DESC, e.dataEvento ASC, e.diaInteiro DESC, COALESCE(e.horaInicio, '00:00:00') ASC
+     LIMIT 6"
+);
+$agendaStmt->execute([
+    'meuColab' => $meuIdColaborador,
+    'meuColab2' => $meuIdColaborador,
+    'verAgenda' => $podeVerAgenda ? 1 : 0,
+]);
+$proximosEventosAgenda = $agendaStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$participantesAgenda = [];
+if ($proximosEventosAgenda) {
+    $evIds = array_map(static fn(array $r): int => (int) $r['idEvento'], $proximosEventosAgenda);
+    $ph = implode(', ', array_fill(0, count($evIds), '?'));
+    $pEvStmt = $pdo->prepare(
+        "SELECT p.idEvento, c.idColaborador, c.nomeCompleto, c.caminhoFoto
+         FROM tbAgendaEventoParticipante p
+         INNER JOIN tbColaborador c ON c.idColaborador = p.idColaborador
+         WHERE p.idEvento IN ($ph)
+         ORDER BY c.nomeCompleto"
+    );
+    $pEvStmt->execute($evIds);
+    foreach ($pEvStmt->fetchAll(PDO::FETCH_ASSOC) as $pr) {
+        $participantesAgenda[(int) $pr['idEvento']][] = $pr;
+    }
+}
+$meusEventosCount = count(array_filter($proximosEventosAgenda, static fn(array $e): bool => (int) $e['euEnvolvido'] === 1));
+
+$docsAtivos = $pdo->query(
+    'SELECT idDocumento, titulo, categoria, dataValidade, semValidade, diasAlertaAntes
+     FROM tbDocumentoInstitucional
+     WHERE ativo = 1
+     ORDER BY semValidade ASC, COALESCE(dataValidade, \'9999-12-31\') ASC'
+)->fetchAll(PDO::FETCH_ASSOC);
+$docsVencidos = 0;
+$docsVencendo = 0;
+$docsAlertasLista = [];
+foreach ($docsAtivos as $d) {
+    if ((int) $d['semValidade'] === 1 || empty($d['dataValidade'])) {
+        continue;
+    }
+    $valDt = new DateTimeImmutable((string) $d['dataValidade']);
+    $diffDias = (int) $hoje->diff($valDt)->format('%r%a');
+    $limAlerta = max(0, (int) $d['diasAlertaAntes']);
+    if ($diffDias < 0) {
+        $docsVencidos++;
+        $docsAlertasLista[] = $d + ['_diff' => $diffDias, '_status' => 'vencido'];
+    } elseif ($diffDias <= $limAlerta) {
+        $docsVencendo++;
+        $docsAlertasLista[] = $d + ['_diff' => $diffDias, '_status' => 'vencendo'];
+    }
+}
+$docsAlertasLista = array_slice($docsAlertasLista, 0, 4);
+
 $usuariosResumo = $pdo->query(
     'SELECT
         COUNT(*) AS total,
@@ -152,7 +237,10 @@ if ($podeVerFinanceiro) {
 
 $atalhos = [];
 $candidatosAtalhos = [
+    ['key' => 'geral.movimentacoes/agenda-institucional', 'titulo' => 'Agenda Institucional', 'icone' => 'ph-calendar-dots', 'url' => $baseUrl . '/pages/geral/movimentacoes/agenda-institucional.php'],
+    ['key' => 'geral.movimentacoes/escala-plantoes', 'titulo' => 'Escala de Plantões', 'icone' => 'ph-calendar-check', 'url' => $baseUrl . '/pages/geral/movimentacoes/escala-plantoes.php'],
     ['key' => 'geral.movimentacoes/livro-plantao', 'titulo' => 'Livro de Plantão', 'icone' => 'ph-notebook', 'url' => $baseUrl . '/pages/geral/movimentacoes/livro-plantao.php'],
+    ['key' => 'geral.cadastros/documentos-institucionais', 'titulo' => 'Documentos e Certidões', 'icone' => 'ph-files', 'url' => $baseUrl . '/pages/geral/cadastros/documentos-institucionais.php'],
     ['key' => 'geral.cadastros/colaboradores', 'titulo' => 'Colaboradores e Voluntários', 'icone' => 'ph-identification-badge', 'url' => $baseUrl . '/pages/geral/cadastros/colaboradores.php'],
     ['key' => 'gestao-acolhidos.movimentacoes/acomodacoes-acolhidos', 'titulo' => 'Mapa de Acomodações', 'icone' => 'ph-bed', 'url' => $baseUrl . '/pages/gestao-acolhidos/movimentacoes/acomodacoes-acolhidos.php'],
     ['key' => 'gestao-acolhidos.movimentacoes/acolhimento', 'titulo' => 'Acolhimentos', 'icone' => 'ph-house-line', 'url' => $baseUrl . '/pages/gestao-acolhidos/movimentacoes/acolhimento.php'],
@@ -177,6 +265,7 @@ $acoesAuditoriaLabels = [
     'criar' => ['label' => 'Criação', 'classe' => 'bg-emerald-100 text-emerald-800'],
     'editar' => ['label' => 'Edição', 'classe' => 'bg-blue-100 text-blue-800'],
     'excluir' => ['label' => 'Exclusão', 'classe' => 'bg-rose-100 text-rose-800'],
+    'exportar' => ['label' => 'Exportação', 'classe' => 'bg-indigo-100 text-indigo-800'],
 ];
 ?>
 <!DOCTYPE html>
@@ -285,12 +374,128 @@ $acoesAuditoriaLabels = [
                 </section>
 
                 <section class="grid gap-4 xl:grid-cols-3">
-                    <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm xl:col-span-2">
-                        <div class="mb-4 flex items-center justify-between gap-3">
-                            <h2 class="flex items-center gap-2 font-bold text-slate-900">
-                                <i class="ph ph-push-pin text-lg text-elo-teal" aria-hidden="true"></i>
-                                Mural do Plantão e Pendências
-                            </h2>
+                    <div class="space-y-4 xl:col-span-2">
+                        <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+                            <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <h2 class="flex items-center gap-2 font-bold text-slate-900">
+                                        <i class="ph ph-calendar-dots text-lg text-elo-teal" aria-hidden="true"></i>
+                                        Próximos Eventos da Agenda
+                                    </h2>
+                                    <?php if ($meusEventosCount > 0): ?>
+                                        <span class="rounded-full bg-elo-teal/10 px-2.5 py-0.5 text-[11px] font-semibold text-elo-teal">
+                                            Você está envolvido em <?php echo $meusEventosCount; ?>
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+                                <?php if ($podeVerAgenda): ?>
+                                    <a href="<?php echo appEscape(appTabUrl($baseUrl . '/pages/geral/movimentacoes/agenda-institucional.php')); ?>"
+                                       class="text-xs font-semibold text-teal-700 hover:text-teal-900">
+                                        Abrir calendário
+                                    </a>
+                                <?php endif; ?>
+                            </div>
+                            <?php if (!$proximosEventosAgenda): ?>
+                                <div class="rounded-xl bg-slate-50 px-4 py-6 text-center">
+                                    <i class="ph ph-calendar-blank text-3xl text-slate-300" aria-hidden="true"></i>
+                                    <p class="mt-1.5 text-sm font-medium text-slate-600">Nenhum evento futuro agendado.</p>
+                                    <?php if ($podeVerAgenda): ?>
+                                        <a href="<?php echo appEscape(appTabUrl($baseUrl . '/pages/geral/movimentacoes/agenda-institucional.php')); ?>"
+                                           class="mt-2 inline-block text-xs font-semibold text-elo-teal hover:underline">
+                                            Agendar primeiro compromisso
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
+                            <?php else: ?>
+                                <div class="space-y-2.5">
+                                    <?php foreach ($proximosEventosAgenda as $ev): ?>
+                                        <?php
+                                        $euParticipo = (int) $ev['euEnvolvido'] === 1;
+                                        $evDt = new DateTimeImmutable((string) $ev['dataEvento']);
+                                        $mesAbrev = mb_strtoupper(mb_substr($meses[(int) $evDt->format('n')], 0, 3, 'UTF-8'), 'UTF-8');
+                                        $horarioEv = (int) $ev['diaInteiro'] === 1
+                                            ? 'Dia inteiro'
+                                            : (!empty($ev['horaInicio'])
+                                                ? substr((string) $ev['horaInicio'], 0, 5) . (!empty($ev['horaFim']) ? ' – ' . substr((string) $ev['horaFim'], 0, 5) : '')
+                                                : 'Sem horário');
+                                        $catCor = match ($ev['categoria']) {
+                                            'Vistoria / Órgão Público' => 'bg-amber-100 text-amber-800',
+                                            'Audiência / Judicial' => 'bg-rose-100 text-rose-800',
+                                            'Treinamento' => 'bg-sky-100 text-sky-800',
+                                            'Evento / Comemorativo' => 'bg-purple-100 text-purple-800',
+                                            'Manutenção' => 'bg-orange-100 text-orange-800',
+                                            'Outro' => 'bg-slate-100 text-slate-700',
+                                            default => 'bg-teal-100 text-teal-800',
+                                        };
+                                        $evParts = $participantesAgenda[(int) $ev['idEvento']] ?? [];
+                                        ?>
+                                        <div class="flex flex-col justify-between gap-2.5 rounded-xl border p-3 sm:flex-row sm:items-center <?php echo $euParticipo ? 'border-elo-teal/40 bg-teal-50/40' : 'border-slate-100 bg-slate-50/70'; ?>">
+                                            <div class="flex items-start gap-3 min-w-0">
+                                                <div class="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border bg-white <?php echo $euParticipo ? 'border-elo-teal/40 text-elo-teal' : 'border-slate-200 text-slate-700'; ?>">
+                                                    <span class="text-base font-bold leading-none"><?php echo $evDt->format('d'); ?></span>
+                                                    <span class="mt-0.5 text-[10px] font-semibold tracking-wider"><?php echo appEscape($mesAbrev); ?></span>
+                                                </div>
+                                                <div class="min-w-0">
+                                                    <div class="flex flex-wrap items-center gap-1.5">
+                                                        <?php if ($euParticipo): ?>
+                                                            <span class="inline-flex items-center gap-1 rounded-full bg-elo-teal px-2 py-0.5 text-[10px] font-semibold text-white">
+                                                                <i class="ph-fill ph-star text-[10px]" aria-hidden="true"></i> Você está envolvido
+                                                            </span>
+                                                        <?php endif; ?>
+                                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold <?php echo $catCor; ?>">
+                                                            <?php echo appEscape((string) $ev['categoria']); ?>
+                                                        </span>
+                                                        <span class="text-xs text-slate-500" data-preserve-case><?php echo appEscape($horarioEv); ?></span>
+                                                    </div>
+                                                    <p class="mt-1 truncate text-sm font-semibold text-slate-800" data-preserve-case><?php echo appEscape((string) $ev['titulo']); ?></p>
+                                                    <?php if (!empty($ev['localEvento'])): ?>
+                                                        <p class="mt-0.5 truncate text-xs text-slate-500" data-preserve-case>
+                                                            <i class="ph ph-map-pin mr-1 text-elo-teal" aria-hidden="true"></i><?php echo appEscape((string) $ev['localEvento']); ?>
+                                                        </p>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+                                            <div class="flex shrink-0 items-center gap-2 self-end sm:self-center">
+                                                <?php if ($evParts): ?>
+                                                    <div class="flex -space-x-1.5">
+                                                        <?php foreach (array_slice($evParts, 0, 4) as $ep): ?>
+                                                            <?php $fotoEp = !empty($ep['caminhoFoto']) ? appTabUrl($baseUrl . '/auth/colaborador-foto.php?id=' . (int) $ep['idColaborador']) : null; ?>
+                                                            <?php if ($fotoEp !== null): ?>
+                                                                <img src="<?php echo appEscape($fotoEp); ?>" alt="<?php echo appEscape((string) $ep['nomeCompleto']); ?>" title="<?php echo appEscape((string) $ep['nomeCompleto']); ?>"
+                                                                     class="h-7 w-7 rounded-full border-2 border-white object-cover">
+                                                            <?php else: ?>
+                                                                <span title="<?php echo appEscape((string) $ep['nomeCompleto']); ?>"
+                                                                      class="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-elo-teal/15 text-[10px] font-bold text-elo-teal">
+                                                                    <?php echo appEscape(mb_strtoupper(mb_substr((string) $ep['nomeCompleto'], 0, 2, 'UTF-8'), 'UTF-8')); ?>
+                                                                </span>
+                                                            <?php endif; ?>
+                                                        <?php endforeach; ?>
+                                                        <?php if (count($evParts) > 4): ?>
+                                                            <span class="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[10px] font-bold text-slate-700">
+                                                                +<?php echo count($evParts) - 4; ?>
+                                                            </span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                                <?php if ($podeVerAgenda): ?>
+                                                    <a href="<?php echo appEscape(appTabUrl($baseUrl . '/pages/geral/movimentacoes/agenda-institucional.php?evento=' . (int) $ev['idEvento'])); ?>"
+                                                       class="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-elo-teal hover:bg-elo-teal/5">
+                                                        Ver
+                                                    </a>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </article>
+
+                        <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+                            <div class="mb-4 flex items-center justify-between gap-3">
+                                <h2 class="flex items-center gap-2 font-bold text-slate-900">
+                                    <i class="ph ph-push-pin text-lg text-elo-teal" aria-hidden="true"></i>
+                                    Mural do Plantão e Pendências
+                                </h2>
                             <?php if ($podeVerPlantao): ?>
                                 <a href="<?php echo appEscape(appTabUrl($baseUrl . '/pages/geral/movimentacoes/livro-plantao.php')); ?>"
                                    class="text-xs font-semibold text-teal-700 hover:text-teal-900">
@@ -341,9 +546,100 @@ $acoesAuditoriaLabels = [
                                 <?php endforeach; ?>
                             </div>
                         <?php endif; ?>
-                    </article>
+                        </article>
+                    </div>
 
                     <div class="space-y-4">
+                        <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+                            <div class="flex items-center justify-between gap-2">
+                                <h2 class="flex items-center gap-1.5 font-bold text-slate-900">
+                                    <i class="ph ph-calendar-check text-lg text-elo-teal" aria-hidden="true"></i>
+                                    Plantonistas de Hoje
+                                </h2>
+                                <?php if ($podeVerEscala): ?>
+                                    <a href="<?php echo appEscape(appTabUrl($baseUrl . '/pages/geral/movimentacoes/escala-plantoes.php')); ?>"
+                                       class="text-xs font-semibold text-teal-700 hover:text-teal-900">Ver escala</a>
+                                <?php endif; ?>
+                            </div>
+                            <?php if (!$plantonistasHoje): ?>
+                                <p class="mt-3 rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                                    Nenhum colaborador escalado para hoje.
+                                </p>
+                            <?php else: ?>
+                                <div class="mt-3 space-y-2">
+                                    <?php foreach ($plantonistasHoje as $pl): ?>
+                                        <?php
+                                        $turnoCor = match ($pl['turno']) {
+                                            'Manhã' => 'bg-amber-100 text-amber-800',
+                                            'Tarde' => 'bg-orange-100 text-orange-800',
+                                            'Noite' => 'bg-indigo-100 text-indigo-800',
+                                            default => 'bg-teal-100 text-teal-800',
+                                        };
+                                        $fotoPl = !empty($pl['caminhoFoto'])
+                                            ? appTabUrl($baseUrl . '/auth/colaborador-foto.php?id=' . (int) $pl['idColaborador'])
+                                            : null;
+                                        ?>
+                                        <div class="flex items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2">
+                                            <div class="flex items-center gap-2.5 min-w-0">
+                                                <?php if ($fotoPl !== null): ?>
+                                                    <img src="<?php echo appEscape($fotoPl); ?>" alt="" class="h-8 w-8 shrink-0 rounded-full border border-white object-cover">
+                                                <?php else: ?>
+                                                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-elo-teal/15 text-xs font-bold text-elo-teal">
+                                                        <?php echo appEscape(mb_strtoupper(mb_substr((string) $pl['nomeCompleto'], 0, 2, 'UTF-8'), 'UTF-8')); ?>
+                                                    </span>
+                                                <?php endif; ?>
+                                                <div class="min-w-0">
+                                                    <p class="truncate text-xs font-semibold text-slate-800" data-preserve-case><?php echo appEscape((string) $pl['nomeCompleto']); ?></p>
+                                                    <p class="truncate text-[11px] text-slate-500" data-preserve-case><?php echo appEscape((string) $pl['cargoFuncao']); ?></p>
+                                                </div>
+                                            </div>
+                                            <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold <?php echo $turnoCor; ?>">
+                                                <?php echo appEscape((string) $pl['turno']); ?>
+                                            </span>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </article>
+
+                        <article class="rounded-2xl border p-5 shadow-sm <?php echo $docsVencidos > 0 ? 'border-rose-200 bg-rose-50/40' : ($docsVencendo > 0 ? 'border-amber-200 bg-amber-50/40' : 'border-slate-100 bg-white'); ?>">
+                            <div class="flex items-center justify-between gap-2">
+                                <h2 class="flex items-center gap-1.5 font-bold text-slate-900">
+                                    <i class="ph ph-files text-lg <?php echo $docsVencidos > 0 ? 'text-rose-600' : ($docsVencendo > 0 ? 'text-amber-600' : 'text-elo-teal'); ?>" aria-hidden="true"></i>
+                                    Documentos e Certidões
+                                </h2>
+                                <?php if ($podeVerDocumentos): ?>
+                                    <a href="<?php echo appEscape(appTabUrl($baseUrl . '/pages/geral/cadastros/documentos-institucionais.php')); ?>"
+                                       class="text-xs font-semibold text-teal-700 hover:text-teal-900">Gerenciar</a>
+                                <?php endif; ?>
+                            </div>
+                            <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                                <span class="rounded-full bg-rose-100 px-2.5 py-0.5 font-semibold text-rose-800"><?php echo $docsVencidos; ?> vencido(s)</span>
+                                <span class="rounded-full bg-amber-100 px-2.5 py-0.5 font-semibold text-amber-800"><?php echo $docsVencendo; ?> vencendo</span>
+                                <span class="rounded-full bg-slate-100 px-2.5 py-0.5 font-medium text-slate-600"><?php echo count($docsAtivos); ?> ativo(s)</span>
+                            </div>
+                            <?php if (!$docsAlertasLista): ?>
+                                <p class="mt-3 rounded-xl bg-emerald-50/80 px-3 py-3 text-center text-xs font-medium text-emerald-800">
+                                    <i class="ph ph-seal-check mr-1" aria-hidden="true"></i>
+                                    <?php echo count($docsAtivos) > 0 ? 'Todas as certidões e documentos estão em dia.' : 'Nenhum documento institucional cadastrado ainda.'; ?>
+                                </p>
+                            <?php else: ?>
+                                <div class="mt-3 space-y-2">
+                                    <?php foreach ($docsAlertasLista as $da): ?>
+                                        <div class="flex items-center justify-between gap-2 rounded-xl border border-white bg-white/90 px-3 py-2 text-xs shadow-xs">
+                                            <div class="min-w-0">
+                                                <p class="truncate font-semibold text-slate-800" data-preserve-case><?php echo appEscape((string) $da['titulo']); ?></p>
+                                                <p class="truncate text-[11px] text-slate-500"><?php echo appEscape((string) $da['categoria']); ?></p>
+                                            </div>
+                                            <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold <?php echo $da['_status'] === 'vencido' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'; ?>">
+                                                <?php echo $da['_diff'] < 0 ? ('Há ' . abs($da['_diff']) . 'd') : ($da['_diff'] === 0 ? 'Hoje' : ('Em ' . $da['_diff'] . 'd')); ?>
+                                            </span>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </article>
+
                         <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                             <div class="flex items-center justify-between gap-2">
                                 <h2 class="font-bold text-slate-900">Ocupação de Leitos</h2>

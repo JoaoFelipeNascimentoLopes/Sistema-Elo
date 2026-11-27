@@ -1,9 +1,18 @@
 <?php
 require_once __DIR__ . '/../../../auth/access.php';
+require_once __DIR__ . '/../../../auth/colaborador-fotos.php';
 $usuarioAtual = appRequirePage('geral.cadastros/colaboradores');
 $pdo = appPdo();
 $baseUrl = appBaseUrl();
 $urlAtual = $baseUrl . '/pages/geral/cadastros/colaboradores.php';
+$urlCracha = $baseUrl . '/pages/geral/cadastros/cracha-colaborador.php';
+$fotoNovaRelativa = null;
+
+$urlFoto = static function (array $colab) use ($baseUrl): ?string {
+    return !empty($colab['caminhoFoto'])
+        ? appTabUrl($baseUrl . '/auth/colaborador-foto.php?id=' . (int) $colab['idColaborador'])
+        : null;
+};
 
 $tiposVinculo = ['Colaborador', 'Voluntário', 'Estagiário', 'Terceirizado'];
 $turnos = ['Manhã', 'Tarde', 'Noite', 'Integral', 'Plantão 12x36', 'Flexível'];
@@ -217,6 +226,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $idUsuarioVinculado = $idUsuarioInput !== '' ? filter_var($idUsuarioInput, FILTER_VALIDATE_INT) : null;
             $observacoes = $textoPost('observacoes');
             $ativo = isset($_POST['ativo']) ? 1 : 0;
+            $removerFoto = isset($_POST['removerFoto']) && (string) $_POST['removerFoto'] === '1';
+            $uploadFoto = $_FILES['foto'] ?? null;
+            $temUploadFoto = is_array($uploadFoto) && ($uploadFoto['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
 
             $formSubmitted = [
                 'idColaborador' => $idColaborador,
@@ -299,6 +311,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($idUsuarioVinculado === false || ($idUsuarioVinculado !== null && $idUsuarioVinculado < 1)) {
                 throw new InvalidArgumentException('O usuário selecionado para vínculo é inválido.');
             }
+            if ($removerFoto && $temUploadFoto) {
+                throw new InvalidArgumentException('Não é possível enviar uma nova foto e marcar remoção ao mesmo tempo.');
+            }
 
             if ($idUsuarioVinculado !== null) {
                 $userExists = $pdo->prepare('SELECT idUsuario FROM tbUsuario WHERE idUsuario = :id');
@@ -308,11 +323,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            $fotoAnterior = null;
+            if ($idColaborador > 0) {
+                $exists = $pdo->prepare('SELECT caminhoFoto FROM tbColaborador WHERE idColaborador = :id');
+                $exists->execute(['id' => $idColaborador]);
+                $fotoAnterior = $exists->fetchColumn();
+                if ($fotoAnterior === false) {
+                    throw new InvalidArgumentException('Colaborador não encontrado.');
+                }
+            }
+
+            if ($temUploadFoto) {
+                $fotoNovaRelativa = appValidarUploadFotoColaborador($uploadFoto);
+            }
+            $caminhoFoto = $removerFoto
+                ? null
+                : ($fotoNovaRelativa ?? (is_string($fotoAnterior) ? $fotoAnterior : null));
+
             $params = [
                 'nomeCompleto' => $nomeCompleto,
                 'cpf' => $cpf,
                 'rg' => $rg !== '' ? $rg : null,
                 'dataNascimento' => $dataNascimento !== '' ? $dataNascimento : null,
+                'caminhoFoto' => $caminhoFoto,
                 'tipoVinculo' => $tipoVinculo,
                 'cargoFuncao' => $cargoFuncao,
                 'registroProfissional' => $registroProfissional !== '' ? $registroProfissional : null,
@@ -334,15 +367,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
 
             if ($idColaborador > 0) {
-                $exists = $pdo->prepare('SELECT idColaborador FROM tbColaborador WHERE idColaborador = :id');
-                $exists->execute(['id' => $idColaborador]);
-                if ($exists->fetchColumn() === false) {
-                    throw new InvalidArgumentException('Colaborador não encontrado.');
-                }
-
                 $statement = $pdo->prepare(
                     'UPDATE tbColaborador
                      SET nomeCompleto = :nomeCompleto, cpf = :cpf, rg = :rg, dataNascimento = :dataNascimento,
+                         caminhoFoto = :caminhoFoto,
                          tipoVinculo = :tipoVinculo, cargoFuncao = :cargoFuncao,
                          registroProfissional = :registroProfissional, turno = :turno,
                          dataInicio = :dataInicio, dataDesligamento = :dataDesligamento,
@@ -356,6 +384,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $params['idUsuarioAlteracao'] = (int) $usuarioAtual['idUsuario'];
                 $params['idColaborador'] = $idColaborador;
                 $statement->execute($params);
+                $fotoSubstituida = ($removerFoto || $fotoNovaRelativa !== null) && is_string($fotoAnterior) && $fotoAnterior !== '';
+                $fotoNovaRelativa = null;
+                if ($fotoSubstituida) {
+                    try {
+                        appRemoverFotoColaborador($fotoAnterior);
+                    } catch (RuntimeException $photoErr) {
+                        error_log($photoErr->getMessage());
+                    }
+                }
 
                 appRegistrarAuditoria(
                     'geral',
@@ -372,12 +409,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $statement = $pdo->prepare(
                 'INSERT INTO tbColaborador
-                    (nomeCompleto, cpf, rg, dataNascimento, tipoVinculo, cargoFuncao,
+                    (nomeCompleto, cpf, rg, dataNascimento, caminhoFoto, tipoVinculo, cargoFuncao,
                      registroProfissional, turno, dataInicio, dataDesligamento,
                      email, telefone, cep, logradouro, numero, complemento, bairro,
                      cidade, uf, idUsuario, observacoes, ativo, idUsuarioCriacao)
                  VALUES
-                    (:nomeCompleto, :cpf, :rg, :dataNascimento, :tipoVinculo, :cargoFuncao,
+                    (:nomeCompleto, :cpf, :rg, :dataNascimento, :caminhoFoto, :tipoVinculo, :cargoFuncao,
                      :registroProfissional, :turno, :dataInicio, :dataDesligamento,
                      :email, :telefone, :cep, :logradouro, :numero, :complemento, :bairro,
                      :cidade, :uf, :idUsuario, :observacoes, :ativo, :idUsuarioCriacao)'
@@ -385,6 +422,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $params['idUsuarioCriacao'] = (int) $usuarioAtual['idUsuario'];
             $statement->execute($params);
             $novoId = (int) $pdo->lastInsertId();
+            $fotoNovaRelativa = null;
 
             appRegistrarAuditoria(
                 'geral',
@@ -404,7 +442,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$idColaborador || $idColaborador < 1) {
                 throw new InvalidArgumentException('Cadastro inválido.');
             }
-            $check = $pdo->prepare('SELECT nomeCompleto, tipoVinculo FROM tbColaborador WHERE idColaborador = :id');
+            $check = $pdo->prepare('SELECT nomeCompleto, tipoVinculo, caminhoFoto FROM tbColaborador WHERE idColaborador = :id');
             $check->execute(['id' => $idColaborador]);
             $row = $check->fetch(PDO::FETCH_ASSOC);
             if (!$row) {
@@ -412,6 +450,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $delete = $pdo->prepare('DELETE FROM tbColaborador WHERE idColaborador = :id');
             $delete->execute(['id' => $idColaborador]);
+            if (!empty($row['caminhoFoto'])) {
+                try {
+                    appRemoverFotoColaborador((string) $row['caminhoFoto']);
+                } catch (RuntimeException $photoErr) {
+                    error_log($photoErr->getMessage());
+                }
+            }
 
             appRegistrarAuditoria(
                 'geral',
@@ -427,11 +472,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         throw new InvalidArgumentException('Ação inválida.');
-    } catch (InvalidArgumentException $exception) {
+    } catch (InvalidArgumentException | RuntimeException $exception) {
         $erro = $exception->getMessage();
     } catch (PDOException $exception) {
         error_log('Falha ao salvar colaborador: ' . $exception->getMessage());
-        $erro = 'Não foi possível salvar o cadastro. Verifique se o CPF ou o usuário vinculado já estão em uso.';
+        $erro = ((int) ($exception->errorInfo[1] ?? 0)) === 1451
+            ? 'Este colaborador possui registros na Escala de Plantões ou na Agenda Institucional e não pode ser excluído. Inative o cadastro em vez de excluir.'
+            : 'Não foi possível salvar o cadastro. Verifique se o CPF ou o usuário vinculado já estão em uso.';
+    } finally {
+        if ($fotoNovaRelativa !== null) {
+            try {
+                appRemoverFotoColaborador($fotoNovaRelativa);
+            } catch (RuntimeException) {
+            }
+            $fotoNovaRelativa = null;
+        }
     }
 }
 
@@ -469,8 +524,8 @@ if ($idUsuarioAtualForm > 0) {
 }
 
 $colaboradores = $pdo->query(
-    'SELECT c.idColaborador, c.nomeCompleto, c.cpf, c.tipoVinculo, c.cargoFuncao,
-            c.registroProfissional, c.turno, c.telefone, c.email, c.ativo,
+    'SELECT c.idColaborador, c.nomeCompleto, c.cpf, c.caminhoFoto, c.tipoVinculo, c.cargoFuncao,
+            c.registroProfissional, c.turno, c.dataInicio, c.telefone, c.email, c.ativo,
             c.idUsuarioCriacao, c.criadoEm, c.idUsuarioAlteracao, c.atualizadoEm,
             uv.login AS loginVinculado,
             uc.nomeCompleto AS nomeUsuarioCriacao,
@@ -481,6 +536,68 @@ $colaboradores = $pdo->query(
      LEFT JOIN tbUsuario ua ON ua.idUsuario = c.idUsuarioAlteracao
      ORDER BY c.ativo DESC, c.nomeCompleto'
 )->fetchAll(PDO::FETCH_ASSOC);
+
+$instituicaoRow = $pdo->query(
+    'SELECT razaoSocial, nomeFantasia, cnpj, telefone, logradouro, numero, bairro, cidade, uf
+     FROM tbInformacoesInstituicao
+     WHERE idInformacoes = 1
+     LIMIT 1'
+)->fetch(PDO::FETCH_ASSOC) ?: [];
+$formatarCnpj = static function (?string $cnpj): string {
+    $d = preg_replace('/\D+/', '', (string) $cnpj) ?? '';
+    return strlen($d) === 14
+        ? substr($d, 0, 2) . '.' . substr($d, 2, 3) . '.' . substr($d, 5, 3) . '/' . substr($d, 8, 4) . '-' . substr($d, 12)
+        : (string) $cnpj;
+};
+$endInstPartes = [];
+$logrInst = trim((string) ($instituicaoRow['logradouro'] ?? ''));
+$numInst = trim((string) ($instituicaoRow['numero'] ?? ''));
+if ($logrInst !== '') {
+    $endInstPartes[] = $logrInst . ($numInst !== '' ? ', ' . $numInst : '');
+}
+if (!empty($instituicaoRow['bairro'])) {
+    $endInstPartes[] = trim((string) $instituicaoRow['bairro']);
+}
+$cidUfInst = trim((string) ($instituicaoRow['cidade'] ?? ''));
+if (!empty($instituicaoRow['uf'])) {
+    $cidUfInst .= ($cidUfInst !== '' ? '/' : '') . strtoupper(trim((string) $instituicaoRow['uf']));
+}
+if ($cidUfInst !== '') {
+    $endInstPartes[] = $cidUfInst;
+}
+$instituicaoCracha = [
+    'nome' => trim((string) ($instituicaoRow['nomeFantasia'] ?? '')) ?: trim((string) ($instituicaoRow['razaoSocial'] ?? '')) ?: 'Casa de Acolhimento',
+    'razao' => trim((string) ($instituicaoRow['razaoSocial'] ?? '')) ?: trim((string) ($instituicaoRow['nomeFantasia'] ?? '')) ?: 'Casa de Acolhimento',
+    'cnpj' => !empty($instituicaoRow['cnpj']) ? $formatarCnpj((string) $instituicaoRow['cnpj']) : '',
+    'telefone' => !empty($instituicaoRow['telefone']) ? $formatarTelefone((string) $instituicaoRow['telefone']) : '',
+    'endereco' => implode(' · ', $endInstPartes),
+    'emissao' => date('d/m/Y'),
+];
+$colaboradoresCracha = [];
+foreach ($colaboradores as $item) {
+    $partesNome = preg_split('/\s+/', trim((string) $item['nomeCompleto'])) ?: [];
+    $inic = !$partesNome
+        ? 'EL'
+        : mb_strtoupper(
+            mb_substr($partesNome[0], 0, 1, 'UTF-8')
+            . (count($partesNome) > 1 ? mb_substr($partesNome[count($partesNome) - 1], 0, 1, 'UTF-8') : mb_substr($partesNome[0], 1, 1, 'UTF-8')),
+            'UTF-8'
+        );
+    $colaboradoresCracha[(int) $item['idColaborador']] = [
+        'id' => (int) $item['idColaborador'],
+        'matricula' => 'COL-' . str_pad((string) $item['idColaborador'], 4, '0', STR_PAD_LEFT),
+        'nomeCompleto' => (string) $item['nomeCompleto'],
+        'iniciais' => $inic,
+        'cpf' => $formatarCpf((string) $item['cpf']),
+        'tipoVinculo' => (string) $item['tipoVinculo'],
+        'cargoFuncao' => (string) $item['cargoFuncao'],
+        'registroProfissional' => (string) ($item['registroProfissional'] ?? ''),
+        'turno' => (string) $item['turno'],
+        'dataInicio' => !empty($item['dataInicio']) ? date('d/m/Y', strtotime((string) $item['dataInicio'])) : '—',
+        'fotoUrl' => $urlFoto($item),
+    ];
+}
+$abrirCrachaInicial = filter_input(INPUT_GET, 'cracha', FILTER_VALIDATE_INT) ?: 0;
 
 $criadoPor = $colaboradorEdicao
     ? $formatarAuditoria($colaboradorEdicao['idUsuarioCriacao'] ?? null, $colaboradorEdicao['nomeUsuarioCriacao'] ?? null, $colaboradorEdicao['criadoEm'] ?? null)
@@ -509,6 +626,45 @@ $abaInicial = ($colaboradorEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'm
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="<?php echo appEscape($baseUrl . '/assets/js/tailwind-config.js'); ?>"></script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+        [data-photo-video][hidden], [data-camera-panel][hidden] { display: none; }
+        .badge-card {
+            width: 54mm;
+            height: 86mm;
+            box-sizing: border-box;
+            position: relative;
+            overflow: hidden;
+            background: #ffffff;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .badge-cut-border { border: 1px dashed #64748b; }
+        .badge-fold-divider { border-right: 1.5px dotted #0f172a; }
+        .badge-bleed-frame {
+            padding: 3mm;
+            position: relative;
+            display: inline-block;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .crop-mark { position: absolute; background: #0f172a; }
+        @page { size: A4 portrait; margin: 12mm; }
+        @media print {
+            html, body {
+                background: #ffffff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                height: auto !important;
+                overflow: visible !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            body > :not(#crachaPrintRoot) { display: none !important; }
+            #crachaPrintRoot { display: block !important; width: 100% !important; }
+            .no-print { display: none !important; }
+            .badge-shadow { box-shadow: none !important; }
+        }
+    </style>
 </head>
 <body class="flex h-screen flex-col overflow-hidden bg-gray-100 font-sans">
     <?php include __DIR__ . '/../../../components/geral/navbar-geral.php'; ?>
@@ -521,7 +677,7 @@ $abaInicial = ($colaboradorEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'm
             <section id="painel-manutencao" role="tabpanel" aria-labelledby="tab-manutencao"
                      class="mb-8 rounded-lg border border-gray-200 bg-white p-5 shadow-sm" <?php echo $abaInicial === 'manutencao' ? '' : 'hidden'; ?>>
                 <h2 class="mb-4 text-lg font-semibold"><?php echo !empty($colaboradorEdicao['idColaborador']) ? 'Alterar colaborador / voluntário' : 'Novo colaborador / voluntário'; ?></h2>
-                <form method="post" class="space-y-5" data-confirm="Confirma gravar este cadastro?">
+                <form method="post" enctype="multipart/form-data" class="space-y-5" data-confirm="Confirma gravar este cadastro?">
                     <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
                     <input type="hidden" name="acao" value="salvar">
                     <input type="hidden" name="idColaborador" id="idColaboradorForm" value="<?php echo (int) ($colaboradorEdicao['idColaborador'] ?? 0); ?>">
@@ -612,8 +768,48 @@ $abaInicial = ($colaboradorEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'm
                         </label>
                     </fieldset>
 
+                    <fieldset class="rounded-lg border border-gray-200 p-4">
+                        <legend class="px-2 text-sm font-semibold text-gray-700">2. Foto de identificação (crachá e escala)</legend>
+                        <div class="flex flex-col gap-4 sm:flex-row sm:items-start">
+                            <div class="flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50" data-photo-preview>
+                                <?php $fotoUrlAtual = $colaboradorEdicao ? $urlFoto($colaboradorEdicao) : null; ?>
+                                <?php if ($fotoUrlAtual !== null): ?>
+                                    <img src="<?php echo appEscape($fotoUrlAtual); ?>" alt="Foto de <?php echo appEscape((string) ($colaboradorEdicao['nomeCompleto'] ?? '')); ?>" class="h-full w-full object-cover" data-photo-image>
+                                <?php else: ?>
+                                    <i class="ph ph-user text-5xl text-gray-300" data-photo-placeholder aria-hidden="true"></i>
+                                <?php endif; ?>
+                            </div>
+                            <div class="space-y-3">
+                                <p class="text-sm text-gray-600">Tire uma foto com a câmera ou selecione uma imagem JPEG, PNG ou WebP de até 5 MB.</p>
+                                <div class="flex flex-wrap gap-2">
+                                    <label class="inline-flex cursor-pointer items-center gap-2 rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50">
+                                        <i class="ph ph-upload-simple text-lg" aria-hidden="true"></i> Escolher foto
+                                        <input type="file" name="foto" accept="image/jpeg,image/png,image/webp" capture="user" data-photo-input class="sr-only">
+                                    </label>
+                                    <button type="button" data-camera-open class="inline-flex items-center gap-2 rounded border border-elo-teal/30 px-3 py-2 text-sm font-medium text-elo-teal hover:bg-elo-teal/5">
+                                        <i class="ph ph-camera text-lg" aria-hidden="true"></i> Abrir câmera
+                                    </button>
+                                    <?php if (!empty($colaboradorEdicao['caminhoFoto'])): ?>
+                                        <label class="inline-flex items-center gap-2 rounded border border-red-200 px-3 py-2 text-sm text-red-700">
+                                            <input type="checkbox" name="removerFoto" value="1" data-photo-remove class="rounded border-red-300 text-red-600">
+                                            Remover foto atual
+                                        </label>
+                                    <?php endif; ?>
+                                </div>
+                                <p role="status" data-photo-message class="text-xs text-gray-500"></p>
+                            </div>
+                        </div>
+                        <div data-camera-panel hidden class="mt-4 max-w-xl rounded-lg border border-gray-200 bg-gray-50 p-3">
+                            <video data-photo-video autoplay playsinline class="max-h-80 w-full rounded bg-black"></video>
+                            <div class="mt-3 flex gap-2">
+                                <button type="button" data-camera-capture class="rounded bg-elo-teal px-3 py-2 text-sm font-medium text-white hover:bg-elo-green">Capturar foto</button>
+                                <button type="button" data-camera-close class="rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Fechar câmera</button>
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <fieldset class="grid gap-4 rounded-lg border border-gray-200 p-4 md:grid-cols-3">
-                        <legend class="px-2 text-sm font-semibold text-gray-700">2. Contato e endereço</legend>
+                        <legend class="px-2 text-sm font-semibold text-gray-700">3. Contato e endereço</legend>
                         <label class="text-sm font-medium text-gray-700">Telefone
                             <input name="telefone" id="telefoneColaborador" maxlength="15" inputmode="numeric" placeholder="(00) 00000-0000"
                                    value="<?php echo appEscape($formatarTelefone((string) ($colaboradorEdicao['telefone'] ?? ''))); ?>"
@@ -670,7 +866,7 @@ $abaInicial = ($colaboradorEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'm
                     </fieldset>
 
                     <fieldset class="grid gap-4 rounded-lg border border-gray-200 p-4 md:grid-cols-2">
-                        <legend class="px-2 text-sm font-semibold text-gray-700">3. Observações e controle</legend>
+                        <legend class="px-2 text-sm font-semibold text-gray-700">4. Observações e controle</legend>
                         <label class="text-sm font-medium text-gray-700 md:col-span-2">Observações / Disponibilidade
                             <textarea name="observacoes" maxlength="500" rows="2" class="mt-1 w-full rounded border border-gray-300 px-3 py-2"><?php echo appEscape((string) ($colaboradorEdicao['observacoes'] ?? '')); ?></textarea>
                         </label>
@@ -687,6 +883,11 @@ $abaInicial = ($colaboradorEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'm
                             <?php echo !empty($colaboradorEdicao['idColaborador']) ? 'Salvar alterações' : 'Cadastrar'; ?>
                         </button>
                         <?php if (!empty($colaboradorEdicao['idColaborador'])): ?>
+                            <button type="button" data-open-cracha="<?php echo (int) $colaboradorEdicao['idColaborador']; ?>"
+                                    class="inline-flex items-center gap-2 rounded border border-elo-teal/40 bg-elo-teal/5 px-4 py-2.5 text-sm font-medium text-elo-teal hover:bg-elo-teal/10">
+                                <i class="ph ph-identification-card text-lg" aria-hidden="true"></i>
+                                Emitir crachá
+                            </button>
                             <a href="<?php echo appEscape(appTabUrl($urlAtual)); ?>" class="rounded border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
                                 Cancelar edição
                             </a>
@@ -733,8 +934,21 @@ $abaInicial = ($colaboradorEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'm
                                 ?>
                                 <tr class="border-b hover:bg-gray-50">
                                     <td class="p-3">
-                                        <div class="font-medium text-gray-800" data-preserve-case><?php echo (int) $item['idColaborador']; ?> — <?php echo appEscape($item['nomeCompleto']); ?></div>
-                                        <div class="text-xs text-gray-500" data-preserve-case><?php echo appEscape($formatarCpf($item['cpf'])); ?></div>
+                                        <div class="flex items-center gap-3">
+                                            <?php $thumbFoto = $urlFoto($item); ?>
+                                            <?php if ($thumbFoto !== null): ?>
+                                                <img src="<?php echo appEscape($thumbFoto); ?>" alt="Foto de <?php echo appEscape($item['nomeCompleto']); ?>"
+                                                     class="h-10 w-10 shrink-0 rounded-full border border-gray-200 object-cover">
+                                            <?php else: ?>
+                                                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-xs font-semibold text-gray-500">
+                                                    <i class="ph ph-user text-lg" aria-hidden="true"></i>
+                                                </span>
+                                            <?php endif; ?>
+                                            <div>
+                                                <div class="font-medium text-gray-800" data-preserve-case><?php echo (int) $item['idColaborador']; ?> — <?php echo appEscape($item['nomeCompleto']); ?></div>
+                                                <div class="text-xs text-gray-500" data-preserve-case><?php echo appEscape($formatarCpf($item['cpf'])); ?></div>
+                                            </div>
+                                        </div>
                                     </td>
                                     <td class="p-3">
                                         <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-medium <?php echo $badgeVinculo; ?>">
@@ -772,8 +986,15 @@ $abaInicial = ($colaboradorEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'm
                                     </td>
                                     <td class="whitespace-nowrap p-3">
                                         <div class="flex items-center gap-2">
+                                            <button type="button" data-open-cracha="<?php echo (int) $item['idColaborador']; ?>"
+                                                    aria-label="Emitir crachá de <?php echo appEscape($item['nomeCompleto']); ?>"
+                                                    title="Emitir crachá de identificação"
+                                                    class="inline-flex h-9 w-9 items-center justify-center rounded border border-sky-200 text-sky-700 hover:bg-sky-50">
+                                                <i class="ph ph-identification-card text-lg" aria-hidden="true"></i>
+                                            </button>
                                             <a href="<?php echo appEscape(appTabUrl($urlAtual . '?editar=' . (int) $item['idColaborador'] . '#manutencao')); ?>"
                                                aria-label="Editar <?php echo appEscape($item['nomeCompleto']); ?>"
+                                               title="Editar cadastro"
                                                class="inline-flex h-9 w-9 items-center justify-center rounded border border-elo-teal/20 text-elo-teal hover:bg-elo-teal/10">
                                                 <i class="ph ph-pencil-simple text-lg" aria-hidden="true"></i>
                                             </a>
@@ -799,6 +1020,105 @@ $abaInicial = ($colaboradorEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'm
             </section>
         </main>
     </div>
+
+    <!-- Modal Grande de Emissão e Impressão de Crachá -->
+    <div id="modalCrachaColaborador" role="dialog" aria-modal="true" aria-labelledby="tituloModalCracha"
+         class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 p-3 md:p-6">
+        <div class="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+                <div class="flex items-center gap-2.5">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-elo-teal/10 text-elo-teal">
+                        <i class="ph ph-identification-card text-xl" aria-hidden="true"></i>
+                    </span>
+                    <div>
+                        <h2 id="tituloModalCracha" class="text-base font-bold text-slate-800">Crachá de Identificação Funcional</h2>
+                        <p id="subtituloModalCracha" class="text-xs text-slate-500" data-preserve-case></p>
+                    </div>
+                </div>
+                <button type="button" id="btnFecharModalCracha" aria-label="Fechar modal de crachá"
+                        class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                    <i class="ph ph-x text-xl" aria-hidden="true"></i>
+                </button>
+            </header>
+
+            <div class="flex-1 overflow-y-auto bg-slate-50 p-5 space-y-5">
+                <!-- Controles ao vivo -->
+                <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+                    <div class="grid gap-4 md:grid-cols-3">
+                        <label class="text-xs font-medium text-slate-700">Modo de impressão
+                            <select id="crachaModo" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                                <option value="caseiro_dobravel">Caseira A4 — Frente e Verso dobrável</option>
+                                <option value="caseiro_adesivo">Papel Adesivo A4 — 2× Somente Frente</option>
+                                <option value="grafica_pvc">Gráfica / PVC — Frente e Verso com sangria</option>
+                            </select>
+                        </label>
+                        <label class="text-xs font-medium text-slate-700">Cor da faixa
+                            <select id="crachaCor" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                                <option value="auto">Automática por vínculo</option>
+                                <option value="teal">Verde-petróleo (Elo)</option>
+                                <option value="navy">Azul marinho</option>
+                                <option value="emerald">Verde esmeralda</option>
+                                <option value="purple">Roxo (Voluntariado)</option>
+                                <option value="amber">Âmbar (Terceirizado)</option>
+                                <option value="slate">Grafite sóbrio</option>
+                            </select>
+                        </label>
+                        <div class="flex flex-col justify-center gap-2 pt-2 text-xs text-slate-700">
+                            <label class="inline-flex items-center gap-2">
+                                <input type="checkbox" id="crachaMostrarCpf" checked class="rounded border-slate-300 text-elo-teal focus:ring-elo-teal">
+                                Exibir CPF no verso
+                            </label>
+                            <label class="inline-flex items-center gap-2">
+                                <input type="checkbox" id="crachaMostrarReg" checked class="rounded border-slate-300 text-elo-teal focus:ring-elo-teal">
+                                Exibir registro profissional
+                            </label>
+                            <label class="inline-flex items-center gap-2">
+                                <input type="checkbox" id="crachaMostrarFuro" checked class="rounded border-slate-300 text-elo-teal focus:ring-elo-teal">
+                                Guia de furo (cordão / jacaré)
+                            </label>
+                        </div>
+                    </div>
+                    <div id="crachaAvisoSemFoto" class="mt-3 hidden items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        <span><i class="ph ph-camera mr-1" aria-hidden="true"></i> Este colaborador ainda não possui foto cadastrada (serão exibidas as iniciais).</span>
+                        <a id="crachaLinkAdicionarFoto" href="#" class="font-semibold underline">Adicionar foto</a>
+                    </div>
+                </div>
+
+                <!-- Palco de prévia CR80 em tamanho real -->
+                <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
+                    <div class="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5 text-[11px] text-slate-500">
+                        <span><strong>Tamanho real CR80:</strong> 54 mm × 86 mm</span>
+                        <span>Na impressão do navegador, marque <strong>"Escala: 100%"</strong> e <strong>"Gráficos de plano de fundo"</strong>.</span>
+                    </div>
+                    <div id="crachaPreviewStage" class="flex flex-col items-center justify-center py-2"></div>
+                </div>
+            </div>
+
+            <footer class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-3.5">
+                <button type="button" id="btnFecharModalCrachaFooter"
+                        class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    Fechar
+                </button>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" id="btnImprimirCrachaModal"
+                            class="inline-flex items-center gap-2 rounded-lg bg-elo-teal px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-elo-green">
+                        <i class="ph ph-printer text-lg" aria-hidden="true"></i> Imprimir agora
+                    </button>
+                    <a id="btnPdfA4Cracha" href="#"
+                       class="inline-flex items-center gap-2 rounded-lg border border-elo-teal/40 bg-elo-teal/5 px-3.5 py-2 text-sm font-medium text-elo-teal hover:bg-elo-teal/10">
+                        <i class="ph ph-file-pdf text-lg" aria-hidden="true"></i> PDF Folha A4
+                    </a>
+                    <a id="btnPdfGraficaCracha" href="#"
+                       class="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-900">
+                        <i class="ph ph-export text-lg" aria-hidden="true"></i> PDF para Gráfica (CR80 + sangria)
+                    </a>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Container exclusivo para impressão limpa via window.print() -->
+    <div id="crachaPrintRoot" class="hidden"></div>
 
     <?php $toastSuccess = $resultado; $toastError = $erro; include __DIR__ . '/../../../components/toast.php'; ?>
     <script src="<?php echo appEscape($baseUrl . '/assets/js/app.js?v=' . appJavascriptVersion()); ?>"></script>
@@ -964,6 +1284,304 @@ $abaInicial = ($colaboradorEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'm
                         e.preventDefault();
                     }
                 });
+            }
+
+            const photoInput = document.querySelector('[data-photo-input]');
+            const photoPreview = document.querySelector('[data-photo-preview]');
+            const photoMessage = document.querySelector('[data-photo-message]');
+            const removePhoto = document.querySelector('[data-photo-remove]');
+            const setPhotoPreview = (source) => {
+                if (!photoPreview) return;
+                let image = photoPreview.querySelector('[data-photo-image]');
+                if (!image) {
+                    photoPreview.replaceChildren();
+                    image = document.createElement('img');
+                    image.dataset.photoImage = '';
+                    image.alt = 'Prévia da foto selecionada';
+                    image.className = 'h-full w-full object-cover';
+                    photoPreview.append(image);
+                }
+                image.src = source;
+            };
+            photoInput?.addEventListener('change', () => {
+                const file = photoInput.files?.[0];
+                if (!file) return;
+                if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+                    photoInput.value = '';
+                    if (photoMessage) photoMessage.textContent = 'Escolha uma foto JPEG, PNG ou WebP de até 5 MB.';
+                    return;
+                }
+                if (removePhoto) removePhoto.checked = false;
+                if (photoMessage) photoMessage.textContent = file.name;
+                setPhotoPreview(URL.createObjectURL(file));
+            });
+            removePhoto?.addEventListener('change', () => {
+                if (removePhoto.checked && photoInput) photoInput.value = '';
+            });
+
+            const cameraPanel = document.querySelector('[data-camera-panel]');
+            const video = document.querySelector('[data-photo-video]');
+            const openCamera = document.querySelector('[data-camera-open]');
+            let cameraStream = null;
+            const stopCamera = () => {
+                cameraStream?.getTracks().forEach((track) => track.stop());
+                cameraStream = null;
+                if (video) video.srcObject = null;
+                if (cameraPanel) {
+                    cameraPanel.hidden = true;
+                    cameraPanel.classList.add('hidden');
+                }
+            };
+            openCamera?.addEventListener('click', async () => {
+                if (!navigator.mediaDevices?.getUserMedia) {
+                    if (photoMessage) photoMessage.textContent = 'A câmera não está disponível neste navegador ou a página não está em HTTPS. Use "Escolher foto".';
+                    return;
+                }
+                try {
+                    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+                    video.srcObject = cameraStream;
+                    cameraPanel.hidden = false;
+                    cameraPanel.classList.remove('hidden');
+                    if (photoMessage) photoMessage.textContent = '';
+                } catch (error) {
+                    console.error('Falha ao acessar a câmera:', error);
+                    if (photoMessage) photoMessage.textContent = 'Não foi possível acessar a câmera. Verifique a permissão do navegador ou escolha uma foto.';
+                }
+            });
+            document.querySelector('[data-camera-close]')?.addEventListener('click', stopCamera);
+            document.querySelector('[data-camera-capture]')?.addEventListener('click', () => {
+                if (!video?.videoWidth || !video?.videoHeight || !cameraStream) {
+                    if (photoMessage) photoMessage.textContent = 'A câmera ainda não está pronta para capturar.';
+                    return;
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0);
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        if (photoMessage) photoMessage.textContent = 'Não foi possível capturar a foto. Tente novamente.';
+                        return;
+                    }
+                    const file = new File([blob], 'foto-colaborador.jpg', { type: 'image/jpeg' });
+                    const transfer = new DataTransfer();
+                    transfer.items.add(file);
+                    photoInput.files = transfer.files;
+                    photoInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    stopCamera();
+                }, 'image/jpeg', 0.9);
+            });
+            window.addEventListener('pagehide', stopCamera, { once: true });
+
+            // Modal grande de Crachá na mesma tela (sem abrir nova aba)
+            const crachaUrlBase = <?php echo json_encode($urlCracha, JSON_THROW_ON_ERROR); ?>;
+            const colabAtualUrl = <?php echo json_encode($urlAtual, JSON_THROW_ON_ERROR); ?>;
+            const instituicaoCracha = <?php echo json_encode($instituicaoCracha, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR); ?>;
+            const colaboradoresCracha = <?php echo json_encode($colaboradoresCracha, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR); ?>;
+            const abrirCrachaInicial = <?php echo (int) $abrirCrachaInicial; ?>;
+
+            const modalCracha = document.getElementById('modalCrachaColaborador');
+            const stageCracha = document.getElementById('crachaPreviewStage');
+            const printRoot = document.getElementById('crachaPrintRoot');
+            const selModo = document.getElementById('crachaModo');
+            const selCor = document.getElementById('crachaCor');
+            const chkCpf = document.getElementById('crachaMostrarCpf');
+            const chkReg = document.getElementById('crachaMostrarReg');
+            const chkFuro = document.getElementById('crachaMostrarFuro');
+            const btnPdfA4 = document.getElementById('btnPdfA4Cracha');
+            const btnPdfGrafica = document.getElementById('btnPdfGraficaCracha');
+            const avisoSemFoto = document.getElementById('crachaAvisoSemFoto');
+            const linkAddFoto = document.getElementById('crachaLinkAdicionarFoto');
+            let crachaColabAtual = null;
+
+            const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+
+            const paletas = {
+                teal: { primary: '#007c89', dark: '#005b66', soft: '#e6f4f5', text: '#005b66' },
+                navy: { primary: '#1e3a8a', dark: '#172554', soft: '#dbeafe', text: '#1e3a8a' },
+                emerald: { primary: '#047857', dark: '#064e3b', soft: '#d1fae5', text: '#065f46' },
+                purple: { primary: '#6d28d9', dark: '#4c1d95', soft: '#f3e8ff', text: '#5b21b6' },
+                amber: { primary: '#b45309', dark: '#78350f', soft: '#fef3c7', text: '#92400e' },
+                slate: { primary: '#334155', dark: '#0f172a', soft: '#f1f5f9', text: '#1e293b' },
+            };
+            const vinculoCor = {
+                'Colaborador': paletas.teal,
+                'Voluntário': paletas.purple,
+                'Estagiário': { primary: '#0369a1', dark: '#075985', soft: '#e0f2fe', text: '#075985' },
+                'Terceirizado': paletas.amber,
+            };
+
+            const renderCrachaPreview = () => {
+                if (!crachaColabAtual || !stageCracha) return;
+                const c = crachaColabAtual;
+                const modo = selModo.value;
+                const corKey = selCor.value;
+                const pal = corKey !== 'auto' && paletas[corKey] ? paletas[corKey] : (vinculoCor[c.tipoVinculo] || paletas.teal);
+                const showCpf = chkCpf.checked;
+                const showReg = chkReg.checked;
+                const showFuro = chkFuro.checked;
+
+                const furoHtml = showFuro
+                    ? '<div class="mx-auto mb-[1.8mm] h-[2.1mm] w-[11mm] rounded-full border border-dashed border-white/80"></div>'
+                    : '<div class="h-[1.8mm]"></div>';
+                const fotoHtml = c.fotoUrl
+                    ? `<img src="${escHtml(c.fotoUrl)}" alt="" class="mx-auto h-[26mm] w-[23mm] rounded-[2.5mm] border-[0.7mm] border-white object-cover shadow-sm">`
+                    : `<div class="mx-auto flex h-[26mm] w-[23mm] items-center justify-center rounded-[2.5mm] border-[0.7mm] border-white bg-slate-200 text-xl font-bold shadow-sm" style="color:${pal.dark}">${escHtml(c.iniciais)}</div>`;
+                const regFrente = showReg && c.registroProfissional
+                    ? `<p class="mt-[0.4mm] text-[5.6pt] text-slate-500">${escHtml(c.registroProfissional)}</p>` : '';
+
+                const frente = `<div class="badge-card badge-shadow flex flex-col">
+                    <div style="background:${pal.primary};" class="px-[3mm] pb-[7mm] pt-[2.2mm] text-center text-white">
+                        ${furoHtml}
+                        <div class="text-[6.4pt] font-bold uppercase leading-[1.18] tracking-wide">${escHtml(instituicaoCracha.nome)}</div>
+                        <div class="mt-[0.5mm] text-[5pt] uppercase tracking-[0.6pt] opacity-90">Identificação Funcional</div>
+                    </div>
+                    <div class="-mt-[5.5mm] text-center">${fotoHtml}</div>
+                    <div class="flex-1 px-[3mm] pt-[2mm] text-center">
+                        <h3 class="text-[8.2pt] font-bold leading-[1.18] text-slate-900">${escHtml(c.nomeCompleto)}</h3>
+                        <p class="mt-[0.7mm] text-[6.5pt] font-medium leading-[1.18] text-slate-600">${escHtml(c.cargoFuncao)}</p>
+                        ${regFrente}
+                        <div class="mt-[1.8mm]">
+                            <span style="background:${pal.soft};color:${pal.text};" class="inline-block rounded-full px-[2.8mm] py-[0.6mm] text-[5.8pt] font-bold uppercase tracking-wider">${escHtml(c.tipoVinculo)}</span>
+                        </div>
+                    </div>
+                    <div class="border-t border-slate-200 bg-slate-50 px-[3.2mm] pb-[1.8mm] pt-[1.5mm]">
+                        <div class="flex items-center justify-between text-[5.8pt] text-slate-500">
+                            <strong class="text-slate-900">${escHtml(c.matricula)}</strong>
+                            <span>Turno: <strong class="text-slate-900">${escHtml(c.turno)}</strong></span>
+                        </div>
+                        <div style="background:${pal.primary};" class="mt-[1.2mm] h-[1.3mm] rounded-full"></div>
+                    </div>
+                </div>`;
+
+                const cpfLinha = showCpf ? `<div class="flex justify-between py-[0.4mm]"><span class="text-slate-500">CPF:</span><strong class="text-slate-900">${escHtml(c.cpf)}</strong></div>` : '';
+                const regLinha = showReg && c.registroProfissional ? `<div class="flex justify-between py-[0.4mm]"><span class="text-slate-500">Registro:</span><strong class="text-slate-900">${escHtml(c.registroProfissional)}</strong></div>` : '';
+                const verso = `<div class="badge-card badge-shadow flex flex-col">
+                    <div style="background:${pal.dark};" class="px-[3mm] py-[2.2mm] text-center text-white">
+                        ${furoHtml}
+                        <div class="text-[6.2pt] font-bold uppercase tracking-wider">Dados Institucionais</div>
+                    </div>
+                    <div class="flex-1 space-y-[1.6mm] px-[3.2mm] py-[2.2mm] text-[5.7pt] leading-[1.25] text-slate-700">
+                        <div class="divide-y divide-slate-100">
+                            <div class="flex justify-between py-[0.4mm]"><span class="text-slate-500">Matrícula:</span><strong class="text-slate-900">${escHtml(c.matricula)}</strong></div>
+                            <div class="flex justify-between py-[0.4mm]"><span class="text-slate-500">Vínculo:</span><strong class="text-slate-900">${escHtml(c.tipoVinculo)}</strong></div>
+                            ${cpfLinha}${regLinha}
+                            <div class="flex justify-between py-[0.4mm]"><span class="text-slate-500">Início:</span><strong class="text-slate-900">${escHtml(c.dataInicio)}</strong></div>
+                        </div>
+                        <div class="border-t border-slate-200 pt-[1.5mm]">
+                            <div class="text-[6pt] font-bold leading-[1.2] text-slate-900">${escHtml(instituicaoCracha.razao)}</div>
+                            ${instituicaoCracha.cnpj ? `<div class="mt-[0.3mm] text-[5.3pt] text-slate-600">CNPJ: ${escHtml(instituicaoCracha.cnpj)}</div>` : ''}
+                            ${instituicaoCracha.endereco ? `<div class="mt-[0.3mm] text-[5.1pt] leading-[1.22] text-slate-600">${escHtml(instituicaoCracha.endereco)}</div>` : ''}
+                            ${instituicaoCracha.telefone ? `<div class="mt-[0.3mm] text-[5.3pt] text-slate-600">Tel.: ${escHtml(instituicaoCracha.telefone)}</div>` : ''}
+                        </div>
+                        <div class="rounded border border-slate-200 bg-slate-50 px-[1.8mm] py-[1.4mm] text-justify text-[4.9pt] leading-[1.24] text-slate-600">
+                            Crachá de uso pessoal e intransferível. Em caso de perda, extravio ou desligamento, devolver imediatamente à administração.
+                        </div>
+                    </div>
+                    <div class="px-[3.2mm] pb-[2.2mm] text-center">
+                        <div class="mx-auto mb-[0.8mm] w-4/5 border-t border-slate-500"></div>
+                        <div class="text-[5.4pt] font-bold text-slate-700">Coordenação / Administração</div>
+                        <div class="mt-[0.3mm] text-[4.8pt] text-slate-400">Emitido em ${escHtml(instituicaoCracha.emissao)} · Sistema Elo</div>
+                    </div>
+                </div>`;
+
+                const cropMarks = `
+                    <span class="crop-mark" style="top:0;left:3mm;width:0.3mm;height:2.2mm;"></span>
+                    <span class="crop-mark" style="top:3mm;left:0;width:2.2mm;height:0.3mm;"></span>
+                    <span class="crop-mark" style="top:0;right:3mm;width:0.3mm;height:2.2mm;"></span>
+                    <span class="crop-mark" style="top:3mm;right:0;width:2.2mm;height:0.3mm;"></span>
+                    <span class="crop-mark" style="bottom:0;left:3mm;width:0.3mm;height:2.2mm;"></span>
+                    <span class="crop-mark" style="bottom:3mm;left:0;width:2.2mm;height:0.3mm;"></span>
+                    <span class="crop-mark" style="bottom:0;right:3mm;width:0.3mm;height:2.2mm;"></span>
+                    <span class="crop-mark" style="bottom:3mm;right:0;width:2.2mm;height:0.3mm;"></span>`;
+
+                let markup = '';
+                if (modo === 'caseiro_dobravel') {
+                    markup = `<div class="inline-flex items-stretch badge-cut-border shadow-md">
+                        <div class="badge-fold-divider">${frente}</div>
+                        <div>${verso}</div>
+                    </div>
+                    <p class="mt-4 text-center text-xs text-slate-500">Recorte na linha tracejada externa, dobre ao meio na linha pontilhada central, cole/plastifique e fure no guia superior.</p>`;
+                } else if (modo === 'caseiro_adesivo') {
+                    markup = `<div class="flex flex-wrap items-center justify-center gap-6">
+                        <div class="badge-cut-border shadow-md">${frente}</div>
+                        <div class="badge-cut-border shadow-md">${frente}</div>
+                    </div>
+                    <p class="mt-4 text-center text-xs text-slate-500">Modo Papel Adesivo: 2 frentes em tamanho CR80 (54 × 86 mm) prontas para recortar e colar sobre cartão PVC ou crachá rígido.</p>`;
+                } else {
+                    markup = `<div class="flex flex-wrap items-center justify-center gap-8">
+                        <div class="text-center">
+                            <p class="no-print mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Frente (CR80 + 3mm sangria)</p>
+                            <div class="badge-bleed-frame shadow-md" style="background:${pal.primary};">${frente}${cropMarks}</div>
+                        </div>
+                        <div class="text-center">
+                            <p class="no-print mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Verso (CR80 + 3mm sangria)</p>
+                            <div class="badge-bleed-frame border border-slate-200 bg-white shadow-md">${verso}${cropMarks}</div>
+                        </div>
+                    </div>
+                    <p class="no-print mt-4 text-center text-xs text-slate-500">Use <strong>"PDF para Gráfica (CR80 + sangria)"</strong> abaixo para baixar o arquivo pronto em 2 páginas (60 × 92 mm) com marcas de corte.</p>`;
+                }
+
+                stageCracha.innerHTML = markup;
+                const tok = getTabToken();
+                const params = new URLSearchParams({
+                    id: String(c.id),
+                    modo,
+                    cor: corKey,
+                    cpf: showCpf ? '1' : '0',
+                    reg: showReg ? '1' : '0',
+                    furo: showFuro ? '1' : '0',
+                    formato: 'pdf',
+                });
+                if (tok) params.set('tabToken', tok);
+                btnPdfA4.href = `${crachaUrlBase}?${params.toString()}&pdfTipo=a4`;
+                btnPdfGrafica.href = `${crachaUrlBase}?${params.toString()}&pdfTipo=grafica`;
+            };
+
+            const abrirModalCracha = (id) => {
+                const colab = colaboradoresCracha[id];
+                if (!colab || !modalCracha) return;
+                crachaColabAtual = colab;
+                document.getElementById('subtituloModalCracha').textContent = `${colab.matricula} · ${colab.nomeCompleto} (${colab.tipoVinculo})`;
+                if (!colab.fotoUrl) {
+                    avisoSemFoto.classList.remove('hidden');
+                    avisoSemFoto.classList.add('flex');
+                    const tok = getTabToken();
+                    linkAddFoto.href = `${colabAtualUrl}?editar=${colab.id}${tok ? '&tabToken=' + encodeURIComponent(tok) : ''}#manutencao`;
+                } else {
+                    avisoSemFoto.classList.add('hidden');
+                    avisoSemFoto.classList.remove('flex');
+                }
+                renderCrachaPreview();
+                modalCracha.classList.remove('hidden');
+                modalCracha.classList.add('flex');
+            };
+
+            const fecharModalCracha = () => {
+                if (!modalCracha) return;
+                modalCracha.classList.add('hidden');
+                modalCracha.classList.remove('flex');
+            };
+
+            document.querySelectorAll('[data-open-cracha]').forEach((btn) => {
+                btn.addEventListener('click', () => abrirModalCracha(Number(btn.dataset.openCracha)));
+            });
+            [selModo, selCor, chkCpf, chkReg, chkFuro].forEach((el) => el?.addEventListener('change', renderCrachaPreview));
+            document.getElementById('btnFecharModalCracha')?.addEventListener('click', fecharModalCracha);
+            document.getElementById('btnFecharModalCrachaFooter')?.addEventListener('click', fecharModalCracha);
+            modalCracha?.addEventListener('click', (e) => { if (e.target === modalCracha) fecharModalCracha(); });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modalCracha && !modalCracha.classList.contains('hidden')) fecharModalCracha(); });
+
+            document.getElementById('btnImprimirCrachaModal')?.addEventListener('click', () => {
+                if (!printRoot || !stageCracha) return;
+                printRoot.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;padding-top:10mm;">${stageCracha.innerHTML}</div>`;
+                window.print();
+            });
+
+            if (abrirCrachaInicial > 0 && colaboradoresCracha[abrirCrachaInicial]) {
+                abrirModalCracha(abrirCrachaInicial);
             }
         })();
     </script>

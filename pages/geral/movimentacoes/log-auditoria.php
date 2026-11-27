@@ -5,6 +5,9 @@ $pdo = appPdo();
 $baseUrl = appBaseUrl();
 $urlAtual = $baseUrl . '/pages/geral/movimentacoes/log-auditoria.php';
 
+$erroAcao = '';
+$sucessoAcao = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     appValidateCsrf();
     $acaoPost = is_scalar($_POST['acao'] ?? null) ? (string) $_POST['acao'] : '';
@@ -70,8 +73,163 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    http_response_code(400);
-    exit('Ação inválida.');
+    if ($acaoPost === 'salvarConfigLog') {
+        $gravarArquivo = isset($_POST['gravarArquivoLog']) ? 1 : 0;
+        $retencaoModo = is_scalar($_POST['retencaoModo'] ?? null) ? trim((string) $_POST['retencaoModo']) : 'nunca';
+        $retencaoDias = null;
+        if ($retencaoModo === 'personalizado') {
+            $diasCustom = filter_var($_POST['retencaoPersonalizada'] ?? null, FILTER_VALIDATE_INT);
+            if ($diasCustom === false || $diasCustom < 7 || $diasCustom > 3650) {
+                $erroAcao = 'Informe um prazo personalizado entre 7 e 3650 dias.';
+            } else {
+                $retencaoDias = (int) $diasCustom;
+            }
+        } elseif (in_array($retencaoModo, ['30', '60', '90', '180', '365'], true)) {
+            $retencaoDias = (int) $retencaoModo;
+        } elseif ($retencaoModo !== 'nunca') {
+            $erroAcao = 'Selecione uma opção de retenção válida.';
+        }
+
+        if ($erroAcao === '') {
+            $upd = $pdo->prepare(
+                'INSERT INTO tbConfiguracaoAuditoria (idConfiguracao, gravarArquivoLog, retencaoDias, idUsuarioAlteracao)
+                 VALUES (1, :gravar, :dias, :uid)
+                 ON DUPLICATE KEY UPDATE gravarArquivoLog = VALUES(gravarArquivoLog), retencaoDias = VALUES(retencaoDias), idUsuarioAlteracao = VALUES(idUsuarioAlteracao)'
+            );
+            $upd->execute([
+                'gravar' => $gravarArquivo,
+                'dias' => $retencaoDias,
+                'uid' => (int) $usuarioAtual['idUsuario'],
+            ]);
+
+            $removidosAgora = 0;
+            if (isset($_POST['limparAgora']) && $retencaoDias !== null && $retencaoDias > 0) {
+                $removidosAgora = appExecutarLimpezaRetencaoAuditoria($retencaoDias);
+            }
+
+            appRegistrarAuditoria(
+                'geral',
+                'editar',
+                'Política de auditoria atualizada (arquivo .log: ' . ($gravarArquivo ? 'ativado' : 'desativado')
+                . ', retenção: ' . ($retencaoDias !== null ? $retencaoDias . ' dias' : 'nunca apagar') . ').',
+                'tbConfiguracaoAuditoria',
+                1,
+                ['gravarArquivoLog' => (bool) $gravarArquivo, 'retencaoDias' => $retencaoDias, 'removidosAgora' => $removidosAgora],
+                $usuarioAtual
+            );
+
+            $qs = 'resultado=config-salva' . ($removidosAgora > 0 ? '&removidos=' . $removidosAgora : '');
+            header('Location: ' . appTabUrl($urlAtual . '?' . $qs));
+            exit;
+        }
+    } elseif ($acaoPost === 'executarLimpeza') {
+        $diasLimpeza = filter_var($_POST['diasLimpeza'] ?? null, FILTER_VALIDATE_INT);
+        if ($diasLimpeza === false || $diasLimpeza < 1 || $diasLimpeza > 3650) {
+            $erroAcao = 'Informe uma quantidade válida de dias (1 a 3650) para limpar logs antigos.';
+        } else {
+            $removidos = appExecutarLimpezaRetencaoAuditoria((int) $diasLimpeza);
+            appRegistrarAuditoria(
+                'geral',
+                'excluir',
+                'Limpeza manual de logs com mais de ' . $diasLimpeza . ' dia(s): ' . $removidos . ' registro(s) removido(s).',
+                'tbLogAuditoria',
+                null,
+                ['dias' => (int) $diasLimpeza, 'removidos' => $removidos],
+                $usuarioAtual
+            );
+            header('Location: ' . appTabUrl($urlAtual . '?resultado=limpeza-ok&removidos=' . $removidos));
+            exit;
+        }
+    } elseif ($acaoPost === 'apagarSelecionados') {
+        $idsRaw = $_POST['ids'] ?? [];
+        $ids = [];
+        if (is_array($idsRaw)) {
+            foreach ($idsRaw as $v) {
+                $idInt = filter_var($v, FILTER_VALIDATE_INT);
+                if ($idInt !== false && $idInt > 0) {
+                    $ids[(int) $idInt] = (int) $idInt;
+                }
+            }
+        }
+        $ids = array_values($ids);
+        if (!$ids) {
+            $erroAcao = 'Selecione ao menos um item de log para apagar.';
+        } else {
+            $ph = implode(', ', array_fill(0, count($ids), '?'));
+            $del = $pdo->prepare("DELETE FROM tbLogAuditoria WHERE idLog IN ($ph)");
+            $del->execute($ids);
+            $removidos = $del->rowCount();
+
+            appRegistrarAuditoria(
+                'geral',
+                'excluir',
+                'Exclusão seletiva de auditoria: ' . $removidos . ' registro(s) apagado(s).',
+                'tbLogAuditoria',
+                null,
+                ['quantidadeRemovida' => $removidos, 'idsAmostra' => array_slice($ids, 0, 20)],
+                $usuarioAtual
+            );
+            header('Location: ' . appTabUrl($urlAtual . '?resultado=selecionados-apagados&removidos=' . $removidos));
+            exit;
+        }
+    } elseif ($acaoPost === 'baixarArquivoLog') {
+        $nomeArquivo = is_scalar($_POST['arquivo'] ?? null) ? trim((string) $_POST['arquivo']) : '';
+        if (!preg_match('/^auditoria-\d{4}-\d{2}\.log$/', $nomeArquivo)) {
+            http_response_code(400);
+            exit('Arquivo de log inválido.');
+        }
+        $logDir = realpath(appAuditoriaLogDirectory());
+        $fullPath = realpath(appAuditoriaLogDirectory() . DIRECTORY_SEPARATOR . $nomeArquivo);
+        if ($logDir === false || $fullPath === false || dirname($fullPath) !== $logDir || !is_file($fullPath)) {
+            http_response_code(404);
+            exit('Arquivo de log não encontrado.');
+        }
+        header('Content-Type: text/plain; charset=UTF-8');
+        header('Content-Length: ' . (string) filesize($fullPath));
+        header('Content-Disposition: attachment; filename="' . $nomeArquivo . '"');
+        header('Cache-Control: private, no-store, max-age=0');
+        readfile($fullPath);
+        exit;
+    } else {
+        http_response_code(400);
+        exit('Ação inválida.');
+    }
+}
+
+$configAuditoria = $pdo->query(
+    'SELECT gravarArquivoLog, retencaoDias, ultimaLimpezaEm
+     FROM tbConfiguracaoAuditoria
+     WHERE idConfiguracao = 1
+     LIMIT 1'
+)->fetch(PDO::FETCH_ASSOC) ?: ['gravarArquivoLog' => 1, 'retencaoDias' => null, 'ultimaLimpezaEm' => null];
+$gravarArquivoLogAtivo = (int) ($configAuditoria['gravarArquivoLog'] ?? 1) === 1;
+$retencaoDiasAtual = $configAuditoria['retencaoDias'] !== null ? (int) $configAuditoria['retencaoDias'] : null;
+$ultimaLimpezaAtual = $configAuditoria['ultimaLimpezaEm'] !== null ? (string) $configAuditoria['ultimaLimpezaEm'] : null;
+
+$arquivosLogDisco = [];
+$logDirPath = appAuditoriaLogDirectory();
+if (is_dir($logDirPath)) {
+    foreach (glob($logDirPath . DIRECTORY_SEPARATOR . 'auditoria-*.log') ?: [] as $f) {
+        $base = basename($f);
+        if (preg_match('/^auditoria-\d{4}-\d{2}\.log$/', $base) && is_file($f)) {
+            $arquivosLogDisco[] = [
+                'nome' => $base,
+                'tamanho' => (int) filesize($f),
+                'modificadoEm' => date('d/m/Y H:i', (int) filemtime($f)),
+            ];
+        }
+    }
+    usort($arquivosLogDisco, static fn(array $a, array $b): int => strcmp($b['nome'], $a['nome']));
+}
+
+$removidosGet = filter_input(INPUT_GET, 'removidos', FILTER_VALIDATE_INT) ?: 0;
+$resultadoKey = is_scalar($_GET['resultado'] ?? null) ? (string) $_GET['resultado'] : '';
+if ($resultadoKey === 'config-salva') {
+    $sucessoAcao = 'Configurações de auditoria salvas com sucesso.' . ($removidosGet > 0 ? ' ' . $removidosGet . ' registro(s) antigo(s) removido(s).' : '');
+} elseif ($resultadoKey === 'limpeza-ok') {
+    $sucessoAcao = 'Limpeza executada: ' . $removidosGet . ' registro(s) antigo(s) removido(s).';
+} elseif ($resultadoKey === 'selecionados-apagados') {
+    $sucessoAcao = $removidosGet . ' item(ns) de log apagado(s) com sucesso.';
 }
 
 $modulos = [
@@ -94,6 +252,7 @@ $acoes = [
     'criar' => ['label' => 'Criação', 'classe' => 'bg-emerald-100 text-emerald-800 border-emerald-200'],
     'editar' => ['label' => 'Edição', 'classe' => 'bg-blue-100 text-blue-800 border-blue-200'],
     'excluir' => ['label' => 'Exclusão', 'classe' => 'bg-rose-100 text-rose-800 border-rose-200'],
+    'exportar' => ['label' => 'Exportação', 'classe' => 'bg-indigo-100 text-indigo-800 border-indigo-200'],
 ];
 
 $validarData = static function (string $data): bool {
@@ -274,6 +433,47 @@ $montarUrlPagina = static function (int $pagina, ?int $limite = null, string $mo
 };
 
 $modoImpressao = is_scalar($_GET['modo'] ?? null) ? trim((string) $_GET['modo']) : '';
+if ($modoImpressao === 'log') {
+    $exportStmt = $pdo->prepare(
+        "SELECT l.idLog, l.dataHora, l.idUsuario, l.loginInformado, l.modulo, l.acao,
+                l.entidade, l.idRegistro, l.descricao, l.detalhesJson, l.enderecoIp
+         FROM tbLogAuditoria l
+         $whereSql
+         ORDER BY l.dataHora DESC, l.idLog DESC
+         LIMIT 5000"
+    );
+    foreach ($params as $key => $value) {
+        $exportStmt->bindValue(':' . $key, $value);
+    }
+    $exportStmt->execute();
+    $linhas = [];
+    foreach ($exportStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $atorTxt = ($row['idUsuario'] !== null ? '#' . $row['idUsuario'] : '-') . ':' . ($row['loginInformado'] ?? 'anonimo');
+        $entTxt = $row['entidade'] !== null ? ($row['entidade'] . ($row['idRegistro'] !== null ? '#' . $row['idRegistro'] : '')) : '-';
+        $descLimpa = preg_replace('/[\r\n]+/', ' ', (string) $row['descricao']) ?? (string) $row['descricao'];
+        $linhas[] = sprintf(
+            '[%s] [id=%d] [modulo=%s] [acao=%s] [usuario=%s] [ip=%s] [entidade=%s] %s%s',
+            (string) $row['dataHora'],
+            (int) $row['idLog'],
+            (string) $row['modulo'],
+            (string) $row['acao'],
+            $atorTxt,
+            (string) ($row['enderecoIp'] ?? '-'),
+            $entTxt,
+            $descLimpa,
+            !empty($row['detalhesJson']) ? ' | detalhes=' . (string) $row['detalhesJson'] : ''
+        );
+    }
+    $conteudo = implode("\n", $linhas) . ($linhas ? "\n" : "# Nenhum registro encontrado para os filtros informados.\n");
+    $nomeDownload = 'log-auditoria-' . date('Ymd-Hi') . '.log';
+    header('Content-Type: text/plain; charset=UTF-8');
+    header('Content-Length: ' . (string) strlen($conteudo));
+    header('Content-Disposition: attachment; filename="' . $nomeDownload . '"');
+    header('Cache-Control: private, no-store, max-age=0');
+    echo $conteudo;
+    exit;
+}
+
 if (in_array($modoImpressao, ['imprimir', 'pdf'], true)) {
     $limiteImpressao = 2000;
     $printStatement = $pdo->prepare(
@@ -483,10 +683,21 @@ $registroFinal = $totalRegistros > 0 ? min($totalRegistros, $offset + count($log
                 <div>
                     <h1 class="text-2xl font-bold text-gray-800">Log de Auditoria</h1>
                 </div>
-                <span class="inline-flex items-center gap-1.5 rounded-full border border-elo-teal/30 bg-elo-teal/10 px-3 py-1 text-xs font-medium text-elo-teal">
-                    <i class="ph ph-shield-check text-base" aria-hidden="true"></i>
-                    Registro íntegro (somente leitura)
-                </span>
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 rounded-full border border-elo-teal/30 bg-elo-teal/10 px-3 py-1 text-xs font-medium text-elo-teal">
+                        <i class="ph ph-file-text text-base" aria-hidden="true"></i>
+                        Arquivo .log: <?php echo $gravarArquivoLogAtivo ? 'Ativo' : 'Desativado'; ?>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700">
+                        <i class="ph ph-clock-countdown text-base text-elo-teal" aria-hidden="true"></i>
+                        Retenção: <?php echo $retencaoDiasAtual !== null ? ($retencaoDiasAtual . ' dias') : 'Nunca apagar'; ?>
+                    </span>
+                    <button type="button" id="btnAbrirConfigAuditoria"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-elo-teal bg-white px-3.5 py-1.5 text-xs font-semibold text-elo-teal shadow-sm hover:bg-elo-teal/5">
+                        <i class="ph ph-gear-six text-base" aria-hidden="true"></i>
+                        Configurações e limpeza
+                    </button>
+                </div>
             </div>
 
             <section class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -611,6 +822,11 @@ $registroFinal = $totalRegistros > 0 ? min($totalRegistros, $offset + count($log
                                     Limpar
                                 </a>
                             <?php endif; ?>
+                            <button type="submit" name="modo" value="log"
+                                    class="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                                <i class="ph ph-download-simple" aria-hidden="true"></i>
+                                Exportar .log
+                            </button>
                             <button type="submit" name="modo" value="imprimir"
                                     class="inline-flex items-center gap-1.5 rounded border border-elo-teal bg-white px-3.5 py-2 text-sm font-medium text-elo-teal transition hover:bg-elo-teal/5">
                                 <i class="ph ph-printer" aria-hidden="true"></i>
@@ -634,10 +850,30 @@ $registroFinal = $totalRegistros > 0 ? min($totalRegistros, $offset + count($log
                         <p class="mt-1 text-xs text-gray-400">Os eventos serão registrados automaticamente conforme os usuários acessam e alteram o sistema.</p>
                     </div>
                 <?php else: ?>
+                    <form id="formApagarLogsSelecionados" method="post" data-confirm="Confirma apagar permanentemente os itens de log selecionados?">
+                        <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
+                        <input type="hidden" name="acao" value="apagarSelecionados">
+                        <div id="auditBulkBar" class="hidden flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2.5 text-xs">
+                            <span class="font-semibold text-rose-800">
+                                <span id="auditSelectedCount">0</span> item(ns) selecionado(s) nesta página
+                            </span>
+                            <div class="flex items-center gap-2">
+                                <button type="button" id="btnDesmarcarLogs" class="rounded border border-rose-200 bg-white px-2.5 py-1 font-medium text-rose-700 hover:bg-rose-100">
+                                    Desmarcar
+                                </button>
+                                <button type="submit" class="inline-flex items-center gap-1 rounded bg-rose-600 px-3 py-1 font-semibold text-white hover:bg-rose-700">
+                                    <i class="ph ph-trash" aria-hidden="true"></i> Apagar selecionados
+                                </button>
+                            </div>
+                        </div>
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200 text-left text-sm">
                             <thead class="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-600">
                                 <tr>
+                                    <th class="w-10 px-3 py-3 text-center">
+                                        <input type="checkbox" id="auditSelectAllPage" aria-label="Selecionar todos os logs desta página"
+                                               class="rounded border-gray-300 text-elo-teal focus:ring-elo-teal">
+                                    </th>
                                     <th class="px-4 py-3">Data / Hora</th>
                                     <th class="px-4 py-3">Usuário</th>
                                     <th class="px-4 py-3">Módulo</th>
@@ -682,6 +918,11 @@ $registroFinal = $totalRegistros > 0 ? min($totalRegistros, $offset + count($log
                                     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
                                     ?>
                                     <tr class="transition hover:bg-gray-50/80">
+                                        <td class="w-10 px-3 py-3 text-center">
+                                            <input type="checkbox" name="ids[]" value="<?php echo (int) $log['idLog']; ?>" data-audit-check
+                                                   aria-label="Selecionar log #<?php echo (int) $log['idLog']; ?>"
+                                                   class="rounded border-gray-300 text-elo-teal focus:ring-elo-teal">
+                                        </td>
                                         <td class="whitespace-nowrap px-4 py-3 text-xs font-medium text-gray-700" data-preserve-case>
                                             <?php echo appEscape($dataHoraFmt); ?>
                                         </td>
@@ -727,6 +968,7 @@ $registroFinal = $totalRegistros > 0 ? min($totalRegistros, $offset + count($log
                             </tbody>
                         </table>
                     </div>
+                    </form>
 
                     <div class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-4 py-3 text-sm" data-preserve-case>
                         <div class="flex flex-wrap items-center gap-3 text-xs text-gray-600">
@@ -791,6 +1033,121 @@ $registroFinal = $totalRegistros > 0 ? min($totalRegistros, $offset + count($log
                 <?php endif; ?>
             </section>
         </main>
+    </div>
+
+    <!-- Modal de Configurações de Log (.log), Retenção e Limpeza -->
+    <div id="auditSettingsModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="auditSettingsTitle">
+        <div class="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl space-y-5">
+            <button type="button" data-settings-close class="absolute right-4 top-4 text-gray-400 transition hover:text-gray-700" aria-label="Fechar">
+                <i class="ph ph-x text-2xl" aria-hidden="true"></i>
+            </button>
+            <div>
+                <h2 id="auditSettingsTitle" class="pr-8 text-lg font-bold text-gray-800">Configurações do Log de Auditoria</h2>
+                <p class="mt-0.5 text-xs text-gray-500">Defina a gravação em arquivo `.log` no servidor e a política de limpeza automática de registros antigos.</p>
+            </div>
+
+            <?php
+            $retPreset = 'nunca';
+            if ($retencaoDiasAtual !== null) {
+                $retPreset = in_array((string) $retencaoDiasAtual, ['30', '60', '90', '180', '365'], true)
+                    ? (string) $retencaoDiasAtual
+                    : 'personalizado';
+            }
+            ?>
+            <form method="post" class="space-y-4 rounded-xl border border-gray-200 bg-gray-50/70 p-4">
+                <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
+                <input type="hidden" name="acao" value="salvarConfigLog">
+
+                <label class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-gray-200 bg-white p-3 text-sm">
+                    <input type="checkbox" name="gravarArquivoLog" value="1" <?php echo $gravarArquivoLogAtivo ? 'checked' : ''; ?>
+                           class="mt-0.5 rounded border-gray-300 text-elo-teal focus:ring-elo-teal">
+                    <span>
+                        <span class="block font-semibold text-gray-800">Salvar cópia em arquivo `.log` no servidor</span>
+                        <span class="block text-xs text-gray-500">Registra cada evento também em <code>logs/auditoria-AAAA-MM.log</code> (diretório privado).</span>
+                    </span>
+                </label>
+
+                <div class="space-y-2 rounded-lg border border-gray-200 bg-white p-3">
+                    <label for="retencaoModoSelect" class="block text-sm font-semibold text-gray-800">Limpeza automática de logs antigos (banco de dados)</label>
+                    <select id="retencaoModoSelect" name="retencaoModo" class="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm">
+                        <option value="nunca" <?php echo $retPreset === 'nunca' ? 'selected' : ''; ?>>Nunca apagar automaticamente (manter histórico completo)</option>
+                        <option value="30" <?php echo $retPreset === '30' ? 'selected' : ''; ?>>Apagar registros com mais de 30 dias</option>
+                        <option value="60" <?php echo $retPreset === '60' ? 'selected' : ''; ?>>Apagar registros com mais de 60 dias</option>
+                        <option value="90" <?php echo $retPreset === '90' ? 'selected' : ''; ?>>Apagar registros com mais de 90 dias</option>
+                        <option value="180" <?php echo $retPreset === '180' ? 'selected' : ''; ?>>Apagar registros com mais de 180 dias</option>
+                        <option value="365" <?php echo $retPreset === '365' ? 'selected' : ''; ?>>Apagar registros com mais de 365 dias (1 ano)</option>
+                        <option value="personalizado" <?php echo $retPreset === 'personalizado' ? 'selected' : ''; ?>>Prazo personalizado (em dias)</option>
+                    </select>
+                    <div id="retencaoCustomWrap" class="<?php echo $retPreset === 'personalizado' ? '' : 'hidden'; ?> pt-1">
+                        <label class="block text-xs font-medium text-gray-700">Manter logs dos últimos quantos dias? (7 a 3650)
+                            <input type="number" name="retencaoPersonalizada" min="7" max="3650"
+                                   value="<?php echo $retencaoDiasAtual ?? 90; ?>"
+                                   class="mt-1 w-40 rounded border border-gray-300 px-3 py-1.5 text-sm">
+                        </label>
+                    </div>
+                    <label class="inline-flex items-center gap-2 pt-1 text-xs text-gray-600">
+                        <input type="checkbox" name="limparAgora" value="1" class="rounded border-gray-300 text-elo-teal focus:ring-elo-teal">
+                        Aplicar limpeza imediatamente ao salvar (se houver prazo definido)
+                    </label>
+                    <?php if ($ultimaLimpezaAtual !== null): ?>
+                        <p class="text-[11px] text-gray-400">Última limpeza executada em <?php echo date('d/m/Y H:i', strtotime($ultimaLimpezaAtual)); ?>.</p>
+                    <?php endif; ?>
+                </div>
+
+                <div class="flex justify-end">
+                    <button type="submit" class="rounded-lg bg-elo-teal px-4 py-2 text-sm font-semibold text-white hover:bg-elo-green">
+                        Salvar configurações
+                    </button>
+                </div>
+            </form>
+
+            <!-- Limpeza manual sob demanda -->
+            <form method="post" class="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4"
+                  data-confirm="Confirma apagar permanentemente os logs mais antigos que o prazo informado?">
+                <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
+                <input type="hidden" name="acao" value="executarLimpeza">
+                <div>
+                    <h3 class="text-sm font-semibold text-amber-900">Limpeza manual imediata</h3>
+                    <p class="text-xs text-amber-800">Apaga do banco os registros mais antigos que o número de dias abaixo (os arquivos `.log` no disco permanecem preservados).</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="number" name="diasLimpeza" min="1" max="3650" value="<?php echo $retencaoDiasAtual ?? 90; ?>"
+                           aria-label="Dias para limpeza manual"
+                           class="w-24 rounded border border-amber-300 bg-white px-2.5 py-1.5 text-sm">
+                    <span class="text-xs font-medium text-amber-900">dias</span>
+                    <button type="submit" class="rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">
+                        Limpar agora
+                    </button>
+                </div>
+            </form>
+
+            <!-- Arquivos .log gravados no servidor -->
+            <div class="rounded-xl border border-gray-200 p-4">
+                <h3 class="text-sm font-semibold text-gray-800">Arquivos `.log` salvos no servidor</h3>
+                <?php if (!$arquivosLogDisco): ?>
+                    <p class="mt-2 text-xs text-gray-500">Nenhum arquivo `.log` gerado ainda. Assim que novos eventos forem registrados com a opção ativa, eles aparecerão aqui.</p>
+                <?php else: ?>
+                    <div class="mt-2.5 divide-y divide-gray-100">
+                        <?php foreach ($arquivosLogDisco as $arq): ?>
+                            <div class="flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
+                                <div>
+                                    <span class="font-mono font-semibold text-gray-800"><?php echo appEscape($arq['nome']); ?></span>
+                                    <span class="ml-2 text-gray-500"><?php echo number_format($arq['tamanho'] / 1024, 1, ',', '.'); ?> KB · atualizado em <?php echo appEscape($arq['modificadoEm']); ?></span>
+                                </div>
+                                <form method="post">
+                                    <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
+                                    <input type="hidden" name="acao" value="baixarArquivoLog">
+                                    <input type="hidden" name="arquivo" value="<?php echo appEscape($arq['nome']); ?>">
+                                    <button type="submit" class="inline-flex items-center gap-1 rounded border border-elo-teal/40 bg-elo-teal/5 px-2.5 py-1 font-medium text-elo-teal hover:bg-elo-teal/10">
+                                        <i class="ph ph-download-simple" aria-hidden="true"></i> Baixar .log
+                                    </button>
+                                </form>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
     </div>
 
     <div id="auditDetailModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="auditModalTitle">
@@ -1080,9 +1437,56 @@ $registroFinal = $totalRegistros > 0 ? min($totalRegistros, $offset + count($log
                     closeModal();
                 }
             });
+
+            // Seleção em lote de logs para exclusão seletiva
+            const selectAllChk = document.getElementById('auditSelectAllPage');
+            const rowChks = Array.from(document.querySelectorAll('[data-audit-check]'));
+            const bulkBar = document.getElementById('auditBulkBar');
+            const selectedCountEl = document.getElementById('auditSelectedCount');
+            const syncSelection = () => {
+                const checked = rowChks.filter((c) => c.checked).length;
+                if (selectedCountEl) selectedCountEl.textContent = String(checked);
+                if (bulkBar) {
+                    bulkBar.classList.toggle('hidden', checked === 0);
+                    bulkBar.classList.toggle('flex', checked > 0);
+                }
+                if (selectAllChk) {
+                    selectAllChk.checked = rowChks.length > 0 && checked === rowChks.length;
+                    selectAllChk.indeterminate = checked > 0 && checked < rowChks.length;
+                }
+            };
+            selectAllChk?.addEventListener('change', () => {
+                rowChks.forEach((c) => { c.checked = selectAllChk.checked; });
+                syncSelection();
+            });
+            rowChks.forEach((c) => c.addEventListener('change', syncSelection));
+            document.getElementById('btnDesmarcarLogs')?.addEventListener('click', () => {
+                rowChks.forEach((c) => { c.checked = false; });
+                syncSelection();
+            });
+
+            // Modal de configurações & retenção
+            const settingsModal = document.getElementById('auditSettingsModal');
+            const closeSettings = () => {
+                settingsModal?.classList.add('hidden');
+                settingsModal?.classList.remove('flex');
+            };
+            document.getElementById('btnAbrirConfigAuditoria')?.addEventListener('click', () => {
+                settingsModal?.classList.remove('hidden');
+                settingsModal?.classList.add('flex');
+            });
+            settingsModal?.querySelectorAll('[data-settings-close]').forEach((b) => b.addEventListener('click', closeSettings));
+            settingsModal?.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettings(); });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && settingsModal && !settingsModal.classList.contains('hidden')) closeSettings(); });
+
+            const retSelect = document.getElementById('retencaoModoSelect');
+            const retCustomWrap = document.getElementById('retencaoCustomWrap');
+            retSelect?.addEventListener('change', () => {
+                retCustomWrap?.classList.toggle('hidden', retSelect.value !== 'personalizado');
+            });
         })();
     </script>
     <script src="<?php echo appEscape($baseUrl . '/assets/js/app.js?v=' . appJavascriptVersion()); ?>"></script>
-    <?php include __DIR__ . '/../../../components/toast.php'; ?>
+    <?php $toastSuccess = $sucessoAcao; $toastError = $erroAcao; include __DIR__ . '/../../../components/toast.php'; ?>
 </body>
 </html>

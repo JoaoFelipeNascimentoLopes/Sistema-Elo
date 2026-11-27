@@ -246,7 +246,7 @@ $resultado = [
                         && in_array('*', $perfilEdicao['permissoes']['*'] ?? [], true);
                     $institutionPermission = $globalWildcard
                         || in_array('informacoes', $perfilEdicao['permissoes']['instituicao'] ?? [], true);
-                    $initialPermissionTab = array_key_first($catalogo) ?? 'geral';
+                    $initialPermissionTab = array_key_first($catalogo) ?? 'permissoes-gerais';
                     ?>
                     <div data-permission-tab-wrapper data-initial-permission-tab="<?php echo appEscape($initialPermissionTab); ?>">
                         <div class="mb-4 flex flex-wrap border-b border-gray-200" role="tablist" aria-label="Módulos de permissão">
@@ -260,16 +260,16 @@ $resultado = [
                                     <?php echo appEscape($modulo['nome']); ?>
                                 </button>
                             <?php endforeach; ?>
-                            <button type="button" id="permissao-tab-geral" role="tab" aria-controls="permissao-panel-geral"
-                                    data-permission-tab-target="geral" aria-selected="false" tabindex="-1"
+                            <button type="button" id="permissao-tab-permissoes-gerais" role="tab" aria-controls="permissao-panel-permissoes-gerais"
+                                    data-permission-tab-target="permissoes-gerais" aria-selected="false" tabindex="-1"
                                     class="inline-flex items-center gap-2 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700">
                                 <i class="ph ph-buildings text-lg" aria-hidden="true"></i>
                                 Permissões Gerais
                             </button>
                         </div>
 
-                        <div id="permissao-panel-geral" role="tabpanel" aria-labelledby="permissao-tab-geral"
-                             data-permission-tab-panel="geral" hidden class="mb-4 rounded-lg border border-gray-200 p-4">
+                        <div id="permissao-panel-permissoes-gerais" role="tabpanel" aria-labelledby="permissao-tab-permissoes-gerais"
+                             data-permission-tab-panel="permissoes-gerais" hidden class="mb-4 rounded-lg border border-gray-200 p-4">
                             <h3 class="mb-1 font-semibold text-gray-800">Permissões Gerais</h3>
                             <p class="mb-3 text-sm text-gray-500">Permissões que não pertencem a um módulo específico.</p>
                             <label class="flex cursor-pointer items-start gap-2 rounded p-2 text-sm text-gray-700 hover:bg-gray-50">
@@ -287,7 +287,8 @@ $resultado = [
                         <?php foreach ($catalogo as $moduleKey => $modulo): ?>
                             <div id="permissao-panel-<?php echo appEscape($moduleKey); ?>" role="tabpanel"
                                  aria-labelledby="permissao-tab-<?php echo appEscape($moduleKey); ?>"
-                                 data-permission-tab-panel="<?php echo appEscape($moduleKey); ?>" hidden
+                                 data-permission-tab-panel="<?php echo appEscape($moduleKey); ?>"
+                                 data-permission-module hidden
                                  class="mb-4 rounded-lg border border-gray-200 p-4">
                                 <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
                                     <h3 class="flex items-center gap-2 font-semibold text-gray-800">

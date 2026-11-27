@@ -40,6 +40,7 @@ $meta = [
     'author' => 'Equipe Sistema Elo',
     'version' => '1.0',
     'date' => date('d/m/Y'),
+    'toc_heading' => 'Conteúdo do Manual',
 ];
 
 $bodyMarkdown = $raw;
@@ -247,10 +248,11 @@ if ($logoMarkup === '') {
     $logoMarkup = '<div class="cover-monogram">ELO</div>';
 }
 
-$tocHtml = '<div class="toc-page"><div class="toc-eyebrow">SUMÁRIO</div><h1 class="toc-heading">Conteúdo do Manual</h1><ul class="toc-list">';
+$tocHtml = '<div class="toc-page"><div class="toc-eyebrow">SUMÁRIO</div><h1 class="toc-heading">' . $escape($meta['toc_heading']) . '</h1><ul class="toc-list">';
 foreach ($toc as $entry) {
     $cls = $entry['level'] === 1 ? 'toc-l1' : 'toc-l2';
-    $tocHtml .= '<li class="' . $cls . '"><a href="#' . $escape($entry['anchor']) . '">' . $escape($entry['title']) . '</a></li>';
+    $tocTitle = str_replace('`', '', $entry['title']);
+    $tocHtml .= '<li class="' . $cls . '"><a href="#' . $escape($entry['anchor']) . '">' . $escape($tocTitle) . '</a></li>';
 }
 $tocHtml .= '</ul></div>';
 
@@ -438,8 +440,8 @@ $fullHtml = '<!DOCTYPE html>
         color: #1e293b;
     }
     .toc-l1 {
-        padding: 2.2mm 0 1mm;
-        font-size: 10.5pt;
+        padding: 1.5mm 0 0.8mm;
+        font-size: 9.8pt;
         font-weight: bold;
         border-bottom: 1px dotted #cbd5e1;
     }
@@ -447,8 +449,8 @@ $fullHtml = '<!DOCTYPE html>
         color: #007c89;
     }
     .toc-l2 {
-        padding: 1.1mm 0 1.1mm 6mm;
-        font-size: 9pt;
+        padding: 0.7mm 0 0.7mm 6mm;
+        font-size: 8.5pt;
         color: #334155;
     }
 
@@ -543,6 +545,10 @@ $fullHtml = '<!DOCTYPE html>
         text-align: left;
         padding: 2mm 2.2mm;
         border: 1px solid #334155;
+    }
+    .doc-table th code {
+        background: #334155;
+        color: #e2e8f0;
     }
     .doc-table td {
         padding: 1.8mm 2.2mm;

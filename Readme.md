@@ -19,7 +19,7 @@
 
 ## Sobre o Projeto
 
-O **Sistema Elo** é uma aplicação web desenvolvida para centralizar e organizar a rotina administrativa, financeira e assistencial de **casas de acolhimento**. A plataforma oferece controle de acesso granular por perfis, gestão de equipe e voluntários, livro de plantão com mural de avisos, trilha de auditoria centralizada, gestão financeira completa (incluindo metas orçamentárias e recibos de doação), acompanhamento de acolhidos, fichas médicas, ocupação de leitos e geração de relatórios personalizados em PDF.
+O **Sistema Elo** é uma aplicação web desenvolvida para centralizar e organizar a rotina administrativa, financeira e assistencial de **casas de acolhimento**. A plataforma oferece controle de acesso granular por perfis, gestão de equipe e voluntários (com foto e emissão de crachás), mapa interativo de escala de plantões, agenda institucional integrada, controle de documentos e certidões com alertas de vencimento, livro de plantão com mural de avisos, trilha de auditoria centralizada com espelhamento em `.log`, gestão financeira completa (incluindo metas orçamentárias e recibos de doação), acompanhamento de acolhidos, fichas médicas, ocupação de leitos e geração de relatórios personalizados em PDF.
 
 ---
 
@@ -54,14 +54,17 @@ O **Sistema Elo** é uma aplicação web desenvolvida para centralizar e organiz
 ### Módulo Geral
 
 - **Dashboard**
-  - **Dashboard Geral:** visão executiva integrada com indicadores de acolhidos ativos, ocupação de leitos, equipe/voluntários, pendências do plantão, usuários e alertas de segurança, mural de avisos fixados, resumo financeiro do mês (respeitando permissões), atividade recente de auditoria e atalhos rápidos.
+  - **Dashboard Geral:** visão executiva integrada com indicadores de acolhidos ativos, ocupação de leitos, equipe/voluntários, pendências do plantão, usuários e alertas de segurança, **Plantonistas de Hoje**, **Próximos Eventos da Agenda** (com destaque automático *"Você está envolvido"* para o usuário logado vinculado a colaborador), alertas de **Documentos e Certidões** (vencidos / vencendo em breve), mural de avisos fixados, resumo financeiro do mês (respeitando permissões), atividade recente de auditoria e atalhos rápidos.
 - **Cadastros**
   - **Usuários:** inclusão, edição, ativação/inativação, bloqueio de acesso, definição de perfil, troca forçada de senha e tempo de expiração da sessão.
-  - **Perfis de Acesso:** gerenciamento completo de perfis com matriz de permissões por módulo, categoria e tela.
-  - **Colaboradores e Voluntários:** cadastro da equipe da instituição (colaboradores, voluntários, estagiários e terceirizados) com validação de CPF, cargo/função, registro profissional, turno, endereço via ViaCEP e vínculo opcional com usuário do sistema.
+  - **Perfis de Acesso:** gerenciamento completo de perfis com matriz de permissões por módulo, categoria e tela (com seleção em lote por módulo).
+  - **Colaboradores e Voluntários:** cadastro da equipe da instituição (colaboradores, voluntários, estagiários e terceirizados) com validação de CPF, upload de foto ou captura por webcam em diretório privado (`uploads/colaboradores/`), cargo/função, registro profissional, turno, endereço via ViaCEP, vínculo opcional com usuário do sistema e **Emissão de Crachá de Identificação Funcional** em modal na mesma aba — padrão CR80 (`54 × 86 mm`) com modos para **Impressora Caseira A4 (frente/verso dobrável)**, **Papel Adesivo (2× frente)** e **PDF para Gráfica (CR80 + 3 mm de sangria e marcas de corte via Dompdf)**.
+  - **Documentos e Certidões Institucionais:** controle de documentos obrigatórios (alvarás, AVCB, CMAS/CMDCA, CNDs, estatuto, atas e convênios) com anexo privado (PDF/imagem até 10 MB), visualizador em modal na mesma aba, opção de documento permanente, prazo configurável de alerta e status automático (**Válido**, **Vencendo em breve**, **Vencido**).
 - **Movimentações**
-  - **Log de Auditoria:** trilha somente leitura de eventos de autenticação, segurança e alterações administrativas (logins, falhas, bloqueios, trocas de senha, cadastros/edições/exclusões e alterações da instituição), com cards de resumo, filtros combinados (incluindo combobox de usuário com autocomplete AJAX), paginação configurável (`10 / 25 / 50 / 100`), modal de detalhes técnicos e impressão/PDF da filtragem.
+  - **Escala de Plantões:** mapa visual interativo (visão **Semanal Turnos × Dias** e **Mensal**) com dock lateral da equipe ativa, **arrastar e soltar (drag-and-drop)** para alocar ou mover plantões, edição de status/horários/observações, detecção de turnos descobertos e conflitos no mesmo dia, cópia da semana anterior em 1 clique e impressão em A4 paisagem para mural.
+  - **Agenda Institucional:** calendário mensal interativo com clique/duplo-clique no dia, **drag-and-drop** para reagendar eventos, pauta lateral do dia, seletor visual com fotos para vincular múltiplos participantes (colaboradores, voluntários, estagiários e terceirizados), filtros por categoria/"Meus eventos", impressão A4 paisagem e exibição personalizada no Dashboard Geral.
   - **Livro de Plantão e Avisos:** registro de passagens de turno, ocorrências e avisos gerais com mural de avisos fixados no topo, prioridade, acompanhamento de status/resolução, vínculo opcional com colaborador e acolhido via autocomplete, filtros e impressão/PDF da folha de plantão.
+  - **Log de Auditoria:** trilha centralizada de eventos de autenticação, segurança e alterações administrativas, com cards de resumo, filtros combinados (incluindo combobox de usuário com autocomplete AJAX), paginação configurável (`10 / 25 / 50 / 100`), modal de detalhes técnicos, impressão/PDF, **gravação automática em arquivos `.log` no servidor (`logs/auditoria-AAAA-MM.log`)**, **exportação `.log`**, **política configurável de retenção automática** (*Nunca apagar*, `30/60/90/180/365` dias ou prazo personalizado), limpeza manual imediata e **exclusão seletiva com checkboxes**.
 - **Relatórios**
   - **Usuários por Perfis:** consulta filtrada e exportação em PDF.
   - **Matriz de Permissões por Perfil:** relatório em modo comparativo (Telas × Perfis) ou detalhado por perfil, com filtros por perfil, módulo e categoria, prévia de impressão e exportação em PDF via Dompdf.
@@ -136,7 +139,9 @@ O **Sistema Elo** é uma aplicação web desenvolvida para centralizar e organiz
 
 A pasta `docs/` organiza os manuais de uso e materiais de apoio por módulo do sistema, contando com um gerador padronizado de PDFs via Dompdf (`docs/gerar-pdf.php`):
 
-- **Financeiro:** [Manual do Módulo Financeiro (Markdown)](./docs/financeiro/manual-modulo-financeiro.md) · [Manual do Módulo Financeiro (PDF)](./docs/financeiro/manual-modulo-financeiro.pdf) — guia completo com capa, sumário, fluxo operacional, detalhamento de campos/validações de cada tela e perguntas frequentes.
+- **Financeiro:**
+  - **Manual do Usuário:** [Markdown](./docs/financeiro/manual-modulo-financeiro.md) · [PDF](./docs/financeiro/manual-modulo-financeiro.pdf) — guia operacional completo com capa, sumário, passo a passo de cada tela, campos, validações e perguntas frequentes.
+  - **Documentação Técnica (Desenvolvedor):** [Markdown](./docs/financeiro/documentacao-tecnica-financeiro.md) · [PDF](./docs/financeiro/documentacao-tecnica-financeiro.pdf) — arquitetura, modelagem de banco, CRUDs, closures PHP, endpoints AJAX, fluxos JS e guia de manutenção.
 - Demais subpastas preparadas: `docs/geral/`, `docs/gestao-acolhidos/`, `docs/atendimento/` e `docs/estoque/`.
 
 ---
@@ -149,7 +154,7 @@ Sistema_Elo/
 │   ├── css/                  # Folhas de estilo específicas
 │   ├── imgs/                 # Logotipo e imagens estáticas
 │   └── js/                   # Scripts de interface, sessões por aba, paginação global, combobox e Tailwind config
-├── auth/                     # Login, logout, troca de senha, controle RBAC, auditoria e entrega segura de fotos
+├── auth/                     # Login, logout, troca de senha, RBAC, auditoria (.log/retenção) e entrega segura de fotos e documentos
 ├── components/               # Navbars, sidebars modulares, toasts, modais e motor de relatórios
 ├── db/
 │   ├── migrations/           # Scripts SQL incrementais de evolução do banco
@@ -159,18 +164,19 @@ Sistema_Elo/
 ├── docs/
 │   ├── atendimento/          # Documentação do módulo Atendimento
 │   ├── estoque/              # Documentação do módulo Estoque
-│   ├── financeiro/           # Manual completo do Módulo Financeiro (MD e PDF)
+│   ├── financeiro/           # Manual do Usuário e Documentação Técnica do Financeiro (MD e PDF)
 │   ├── geral/                # Documentação do módulo Geral
 │   ├── gestao-acolhidos/     # Documentação do módulo Gestão de Acolhidos
-│   └── gerar-pdf.php         # Script CLI para converter manuais Markdown em PDF via Dompdf
+│   └── gerar-pdf.php         # Script CLI para converter documentos Markdown em PDF via Dompdf
+├── logs/                     # Arquivos mensais .log de auditoria no servidor (ignorado no Git)
 ├── pages/
 │   ├── atendimento/          # Módulo de Atendimento (em estruturação)
 │   ├── estoque/              # Módulo de Estoque (em estruturação)
 │   ├── financeiro/           # Dashboard, cadastros, movimentações, recibos e relatórios financeiros
-│   ├── geral/                # Dashboard, usuários, perfis, colaboradores/voluntários, livro de plantão, log de auditoria e relatórios
+│   ├── geral/                # Dashboard, usuários, perfis, colaboradores/crachá, documentos, escala, agenda, livro de plantão, log de auditoria e relatórios
 │   ├── gestao-acolhidos/     # Dashboard, acolhidos, fichas médicas, estrutura física, acolhimentos, acomodações e relatórios
 │   └── informacoes-instituicao.php
-├── uploads/                  # Armazenamento privado local das fotos dos acolhidos (ignorado no Git)
+├── uploads/                  # Armazenamento privado local de fotos e documentos institucionais (ignorado no Git)
 ├── composer.json             # Dependências PHP (dompdf/dompdf)
 └── Readme.md
 ```
