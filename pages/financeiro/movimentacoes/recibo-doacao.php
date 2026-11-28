@@ -105,17 +105,22 @@ $cidadeInstituicao = trim((string) ($recibo['instituicaoCidade'] ?? ''));
 $ufInstituicao = trim((string) ($recibo['instituicaoUf'] ?? ''));
 $localInstituicao = trim($cidadeInstituicao . ($cidadeInstituicao !== '' && $ufInstituicao !== '' ? ' - ' : '') . $ufInstituicao);
 $numeroRecibo = 'REC-' . $data->format('Y') . '-' . str_pad((string) $recibo['idLancamento'], 6, '0', STR_PAD_LEFT);
+$baixarPdf = ($_GET['download'] ?? '') === '1';
+$emModal = ($_GET['modal'] ?? '') === '1';
 if ($nomeInstituicao === null) {
     http_response_code(409);
     header('Content-Type: text/html; charset=UTF-8');
     $voltarUrl = appTabUrl('lancamentos-financeiros.php');
+    $botaoVoltar = $emModal
+        ? ''
+        : '<a href="' . appEscape($voltarUrl) . '" style="display:inline-block;margin-top:12px;padding:10px 16px;background:#007c89;color:#fff;text-decoration:none;border-radius:4px">Voltar aos lançamentos</a>';
     echo '<!DOCTYPE html><html lang="pt-br"><meta charset="UTF-8"><title>Sistema Elo</title>'
         . '<body style="margin:0;padding:40px;background:#f3f4f6;font:16px Arial,sans-serif;color:#1f2937">'
         . '<main style="max-width:640px;margin:auto;padding:28px;background:#fff;border:1px solid #d1d5db;border-radius:8px">'
         . '<h1 style="margin-top:0">Recibo não emitido</h1>'
         . '<p>A doação foi salva, mas falta cadastrar a razão social ou o nome fantasia da instituição.</p>'
         . '<p>Preencha os dados em Informações da Instituição e depois emita o recibo pela lista de lançamentos.</p>'
-        . '<a href="' . appEscape($voltarUrl) . '" style="display:inline-block;margin-top:12px;padding:10px 16px;background:#007c89;color:#fff;text-decoration:none;border-radius:4px">Voltar aos lançamentos</a>'
+        . $botaoVoltar
         . '</main></body></html>';
     exit;
 }
@@ -190,10 +195,11 @@ $pdf->render();
 appRegistrarAuditoria(
     'financeiro',
     'exportar',
-    'Recibo de doação emitido em PDF: ' . $numeroRecibo . ' (' . $recibo['doadorNome'] . ' · ' . $valor . ').',
+    ($baixarPdf ? 'Recibo de doação baixado em PDF: ' : 'Recibo de doação visualizado em PDF: ') . $numeroRecibo . ' (' . $recibo['doadorNome'] . ' · ' . $valor . ').',
     'tbLancamentoFinanceiro',
     (int) $recibo['idLancamento'],
-    ['numeroRecibo' => $numeroRecibo, 'valor' => $valor, 'doador' => $recibo['doadorNome']]
+    ['numeroRecibo' => $numeroRecibo, 'valor' => $valor, 'doador' => $recibo['doadorNome'], 'modo' => $baixarPdf ? 'download' : 'visualizacao']
 );
-$pdf->stream('recibo-doacao-' . (int) $recibo['idLancamento'] . '.pdf', ['Attachment' => true]);
+header('Cache-Control: private, no-store, max-age=0');
+$pdf->stream('recibo-doacao-' . (int) $recibo['idLancamento'] . '.pdf', ['Attachment' => $baixarPdf]);
 exit;

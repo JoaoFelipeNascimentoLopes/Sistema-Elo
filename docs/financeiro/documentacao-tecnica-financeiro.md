@@ -333,8 +333,7 @@ Quando `ctype_digit($busca)` é verdadeiro, a consulta adiciona uma cláusula `O
    - Ao editar um lançamento existente, o back-end carrega o registro original (`$lancamentoOriginal`). Se uma categoria, fonte, forma ou pessoa foi inativada **depois** da criação do lançamento, o usuário ainda consegue salvar outras alterações desde que mantenha o **mesmo ID original**; tentar trocar para *outro* cadastro inativo é bloqueado. Na interface, referências inativas preservadas são exibidas com o sufixo `(Inativa)` via `$autocompleteValues`.
 3. **Emissão Automática do Recibo de Doação (Redirect Inteligente):**
    - Um lançamento é elegível a recibo quando atende simultaneamente às 3 condições: `naturezaCategoria === 'Entrada'`, `statusLancamento === 'Efetivado'` e `idDoadorContribuinte !== null`.
-   - No `INSERT`: se for elegível, em vez de voltar para a listagem, o servidor redireciona diretamente para `recibo-doacao.php?id=<lastInsertId>` (preservando `tabToken`).
-   - No `UPDATE`: se o lançamento **passou a ser elegível** (ex.: mudou de `Pendente` para `Efetivado`, ou teve um doador vinculado, ou mudou a natureza para `Entrada`), redireciona automaticamente para `recibo-doacao.php?id=<id>`. Na tabela de pesquisa, todo lançamento elegível também exibe um botão permanente para reemitir o recibo.
+   - No `INSERT` ou `UPDATE` que torna o lançamento elegível: em vez de forçar download direto, o servidor redireciona via PRG para `lancamentos-financeiros.php?resultado=criado|atualizado&recibo=<id>` (preservando `tabToken`), abrindo automaticamente o modal de prévia inline do PDF na tela atualizada (e limpando `&recibo=` da URL via `history.replaceState`). Na tabela de pesquisa, todo lançamento elegível também exibe o botão **Emitir recibo** que abre o mesmo modal.
 4. **Anexo Privado de Comprovante / Nota Fiscal (`auth/lancamento-comprovantes.php` e `auth/lancamento-comprovante.php`):**
    - O formulário usa `enctype="multipart/form-data"` e aceita upload opcional em `$_FILES['comprovante']` (PDF, JPEG, PNG ou WebP até 10 MB), validando MIME real via `finfo` e dimensões via `getimagesize` antes de gravar em `uploads/comprovantes-financeiros/` (com `.htaccess` contendo `Require all denied`).
    - Em caso de substituição, marcação de `removerComprovante=1`, falha de banco ou exclusão do lançamento (`acao=excluir`), o arquivo órfão é removido automaticamente via `appRemoverComprovanteFinanceiro()`.
@@ -365,7 +364,7 @@ Endpoint GET dedicado (`recibo-doacao.php?id=<idLancamento>`) protegido por `app
    - `$montarEndereco(array $data, string $prefix, callable $formatarCep)` — monta endereço completo separado por ` · ` reutilizando o mesmo código para os prefixos `'doador'` e `'instituicao'`.
 4. **Numeração e Renderização Dompdf:**
    - Gera o identificador único `$numeroRecibo = 'REC-' . $data->format('Y') . '-' . str_pad((string) $id, 6, '0', STR_PAD_LEFT)` e a data por extenso (`$dataPorExtenso`).
-   - Instancia `\Dompdf\Dompdf` com `defaultFont = 'DejaVu Sans'` e `isRemoteEnabled = false` (segurança contra SSRF), registra auditoria explícita via `appRegistrarAuditoria('financeiro', 'exportar', ...)`, renderiza em A4 retrato e faz stream com `Attachment => true` como `recibo-doacao-<id>.pdf`.
+   - Instancia `\Dompdf\Dompdf` com `defaultFont = 'DejaVu Sans'` e `isRemoteEnabled = false` (segurança contra SSRF), registra auditoria explícita via `appRegistrarAuditoria('financeiro', 'exportar', ...)`, renderiza em A4 retrato e faz stream **inline** por padrão (`Attachment => false`) para prévia no modal, ou download (`Attachment => true`) quando chamado com `?download=1`, como `recibo-doacao-<id>.pdf`.
 
 ## 6.3 Metas Orçamentárias (`metas-orcamentarias.php`)
 

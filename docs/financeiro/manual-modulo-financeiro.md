@@ -235,7 +235,7 @@ Na aba **Pesquisa**, você visualiza todos os lançamentos com barra de busca in
 
 **Caminho de acesso:** `Financeiro → Movimentações → Lançamentos Financeiros → Aba Pesquisa → Botão "Emitir recibo"`
 
-O sistema gera automaticamente um comprovante formal em **PDF (A4 Retrato)** numerado no formato `REC-AAAA-NNNNNN` (ex.: `REC-2026-000042`).
+O sistema gera automaticamente um comprovante formal em **PDF (A4 Retrato)** numerado no formato `REC-AAAA-NNNNNN` (ex.: `REC-2026-000042`), exibido primeiro em **modal de prévia na mesma aba** (com opção de **Baixar** o PDF), sem forçar o download direto nem interromper a navegação.
 
 ### Requisitos para o botão "Emitir recibo" aparecer e funcionar
 

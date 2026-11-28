@@ -354,7 +354,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 if ($emitirReciboAutomaticamente) {
-                    header('Location: ' . appTabUrl('recibo-doacao.php?id=' . $idLancamento));
+                    header('Location: ' . appTabUrl('lancamentos-financeiros.php?resultado=atualizado&recibo=' . $idLancamento));
                     exit;
                 }
                 header('Location: ' . appTabUrl('lancamentos-financeiros.php?resultado=atualizado'));
@@ -376,7 +376,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $statement->execute($values + ['idUsuarioCriacao' => (int) $usuarioAtual['idUsuario']]);
             $idNovoLancamento = (int) $pdo->lastInsertId();
             if ($natureza === 'Entrada' && $status === 'Efetivado' && $idDoadorContribuinte !== null) {
-                header('Location: ' . appTabUrl('recibo-doacao.php?id=' . $idNovoLancamento));
+                header('Location: ' . appTabUrl('lancamentos-financeiros.php?resultado=criado&recibo=' . $idNovoLancamento));
                 exit;
             }
             header('Location: ' . appTabUrl('lancamentos-financeiros.php?resultado=criado'));
@@ -624,6 +624,26 @@ $resultado = [
     'excluido' => 'Lançamento financeiro excluído.',
 ][(string) ($_GET['resultado'] ?? '')] ?? '';
 $baseUrl = appBaseUrl();
+$reciboAutoModal = null;
+$reciboGetId = is_scalar($_GET['recibo'] ?? null) ? filter_var($_GET['recibo'], FILTER_VALIDATE_INT) : false;
+if ($reciboGetId !== false && $reciboGetId > 0) {
+    foreach ($lancamentos as $itemRecibo) {
+        if ((int) $itemRecibo['idLancamento'] === $reciboGetId
+            && $itemRecibo['naturezaCategoria'] === 'Entrada'
+            && $itemRecibo['statusLancamento'] === 'Efetivado'
+            && !empty($itemRecibo['idDoadorContribuinte'])) {
+            $anoRecibo = date('Y', strtotime((string) $itemRecibo['dataLancamento']));
+            $numRecibo = 'REC-' . $anoRecibo . '-' . str_pad((string) $reciboGetId, 6, '0', STR_PAD_LEFT);
+            $reciboAutoModal = [
+                'url' => appTabUrl('recibo-doacao.php?id=' . $reciboGetId . '&modal=1'),
+                'download' => appTabUrl('recibo-doacao.php?id=' . $reciboGetId . '&download=1'),
+                'nome' => 'Recibo de Doação — ' . $numRecibo,
+                'ext' => 'pdf',
+            ];
+            break;
+        }
+    }
+}
 $abaInicial = ($lancamentoEdicao || ($erro !== '' && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'salvar'))
     ? 'manutencao'
     : 'pesquisa';
@@ -855,7 +875,14 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                                         </form>
                                     <?php endif; ?>
                                     <?php if ($lancamento['naturezaCategoria'] === 'Entrada' && $lancamento['statusLancamento'] === 'Efetivado' && !empty($lancamento['idDoadorContribuinte'])): ?>
-                                        <a href="<?php echo appEscape(appTabUrl('recibo-doacao.php?id=' . (int) $lancamento['idLancamento'])); ?>" aria-label="Emitir recibo de doação do lançamento <?php echo (int) $lancamento['idLancamento']; ?>" class="inline-flex items-center gap-1.5 rounded border border-emerald-200 px-2.5 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-50"><i class="ph ph-receipt text-base" aria-hidden="true"></i>Emitir recibo</a>
+                                        <?php
+                                        $reciboId = (int) $lancamento['idLancamento'];
+                                        $reciboAno = date('Y', strtotime((string) $lancamento['dataLancamento']));
+                                        $reciboCodigo = 'REC-' . $reciboAno . '-' . str_pad((string) $reciboId, 6, '0', STR_PAD_LEFT);
+                                        $reciboStreamUrl = appTabUrl('recibo-doacao.php?id=' . $reciboId . '&modal=1');
+                                        $reciboDownloadUrl = appTabUrl('recibo-doacao.php?id=' . $reciboId . '&download=1');
+                                        ?>
+                                        <button type="button" data-open-comprovante data-url="<?php echo appEscape($reciboStreamUrl); ?>" data-download="<?php echo appEscape($reciboDownloadUrl); ?>" data-nome="<?php echo appEscape('Recibo de Doação — ' . $reciboCodigo); ?>" data-ext="pdf" aria-label="Emitir recibo de doação do lançamento <?php echo $reciboId; ?>" class="inline-flex items-center gap-1.5 rounded border border-emerald-200 px-2.5 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-50"><i class="ph ph-receipt text-base" aria-hidden="true"></i>Emitir recibo</button>
                                     <?php endif; ?>
                                     <a href="?editar=<?php echo (int) $lancamento['idLancamento']; ?>#manutencao" aria-label="Alterar lançamento <?php echo appEscape($lancamento['descricaoLancamento']); ?>" class="inline-flex h-9 w-9 items-center justify-center rounded border border-elo-teal/20 text-elo-teal hover:bg-elo-teal/10"><i class="ph ph-pencil-simple text-lg" aria-hidden="true"></i></a>
                                     <form method="post" data-confirm="Confirma excluir este lançamento financeiro?"><input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>"><input type="hidden" name="acao" value="excluir"><input type="hidden" name="idLancamento" value="<?php echo (int) $lancamento['idLancamento']; ?>"><button type="submit" aria-label="Excluir lançamento <?php echo appEscape($lancamento['descricaoLancamento']); ?>" class="inline-flex h-9 w-9 items-center justify-center rounded border border-red-200 text-red-600 hover:bg-red-50"><i class="ph ph-trash text-lg" aria-hidden="true"></i></button></form>
@@ -907,32 +934,45 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                 document.addEventListener('keydown', (e) => {
                     if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal();
                 });
-                document.addEventListener('click', (e) => {
-                    const btn = e.target.closest('[data-open-comprovante]');
-                    if (!btn) return;
-                    const url = btn.dataset.url || '';
-                    const dl = btn.dataset.download || url;
-                    const nome = btn.dataset.nome || 'Comprovante';
-                    const ext = (btn.dataset.ext || '').toLowerCase();
-                    titulo.textContent = nome;
-                    download.href = dl;
+                const openPreview = (url, dl, nome, ext) => {
+                    titulo.textContent = nome || 'Visualização de documento';
+                    download.href = dl || url;
                     corpo.replaceChildren();
-                    if (ext === 'pdf') {
+                    if ((ext || '').toLowerCase() === 'pdf') {
                         const iframe = document.createElement('iframe');
                         iframe.src = url;
-                        iframe.title = nome;
+                        iframe.title = nome || 'PDF';
                         iframe.className = 'h-full w-full rounded border border-gray-200 bg-white';
                         corpo.append(iframe);
                     } else {
                         const img = document.createElement('img');
                         img.src = url;
-                        img.alt = nome;
+                        img.alt = nome || 'Imagem';
                         img.className = 'max-h-full max-w-full rounded object-contain shadow';
                         corpo.append(img);
                     }
                     modal.classList.remove('hidden');
                     modal.classList.add('flex');
+                };
+                document.addEventListener('click', (e) => {
+                    const btn = e.target.closest('[data-open-comprovante]');
+                    if (!btn) return;
+                    openPreview(
+                        btn.dataset.url || '',
+                        btn.dataset.download || btn.dataset.url || '',
+                        btn.dataset.nome || 'Comprovante',
+                        btn.dataset.ext || ''
+                    );
                 });
+                const autoRecibo = <?php echo json_encode($reciboAutoModal, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+                if (autoRecibo && autoRecibo.url) {
+                    openPreview(autoRecibo.url, autoRecibo.download, autoRecibo.nome, autoRecibo.ext);
+                    if (window.history && window.history.replaceState) {
+                        const cleanUrl = new URL(window.location.href);
+                        cleanUrl.searchParams.delete('recibo');
+                        window.history.replaceState({}, '', cleanUrl.toString());
+                    }
+                }
             }
         })();
     </script>
