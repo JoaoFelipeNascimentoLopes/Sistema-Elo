@@ -234,13 +234,17 @@ if ($resultadoKey === 'config-salva') {
 
 $modulos = [
     'auth' => 'Autenticação',
-    'geral' => 'Geral',
     'instituicao' => 'Instituição',
-    'financeiro' => 'Financeiro',
-    'gestao-acolhidos' => 'Gestão de Acolhidos',
-    'atendimento' => 'Atendimento',
-    'estoque' => 'Estoque',
 ];
+foreach (appPageCatalog() as $modKey => $modInfo) {
+    $modulos[$modKey] = (string) ($modInfo['nome'] ?? ucfirst($modKey));
+}
+foreach ($pdo->query('SELECT DISTINCT modulo FROM tbLogAuditoria ORDER BY modulo')->fetchAll(PDO::FETCH_COLUMN) as $modDb) {
+    $modDb = trim((string) $modDb);
+    if ($modDb !== '' && !isset($modulos[$modDb])) {
+        $modulos[$modDb] = ucwords(str_replace(['-', '_'], ' ', $modDb));
+    }
+}
 
 $acoes = [
     'login_sucesso' => ['label' => 'Login com sucesso', 'classe' => 'bg-emerald-100 text-emerald-800 border-emerald-200'],

@@ -1,0 +1,281 @@
+/* Tema Escuro Global — Sistema Elo
+ * Aplicado apenas em tela (@media screen) quando html[data-theme="escuro"].
+ * Preserva folhas de impressão (.print-sheet), crachás (.badge-card / #crachaPrintRoot) e PDFs.
+ */
+@media screen {
+    html[data-theme="escuro"] {
+        color-scheme: dark;
+    }
+
+    html[data-theme="escuro"] body {
+        background-color: #0b1220 !important;
+        color: #e2e8f0 !important;
+    }
+
+    /* Navbar superior: mantém identidade teal em tom levemente mais profundo */
+    html[data-theme="escuro"] body > nav.bg-elo-teal {
+        background-color: #005f6b !important;
+        border-bottom: 1px solid #0e7490;
+    }
+
+    /* Fundos principais e superfícies */
+    html[data-theme="escuro"] main,
+    html[data-theme="escuro"] .bg-gray-50,
+    html[data-theme="escuro"] .bg-gray-100,
+    html[data-theme="escuro"] .bg-slate-50,
+    html[data-theme="escuro"] .bg-slate-100 {
+        background-color: #0f172a !important;
+    }
+
+    html[data-theme="escuro"] .bg-white:not(.badge-card):not(.badge-card *):not(.print-sheet):not(.print-sheet *):not([data-theme-preview="claro"]):not([data-theme-preview="claro"] *),
+    html[data-theme="escuro"] aside,
+    html[data-theme="escuro"] dialog {
+        background-color: #1e293b !important;
+        color: #e2e8f0 !important;
+    }
+
+    /* Superfícies internas elevadas (ex.: linhas de card, cabeçalho de tabela, sub-blocos) */
+    html[data-theme="escuro"] .bg-white .bg-gray-50,
+    html[data-theme="escuro"] .bg-white .bg-slate-50,
+    html[data-theme="escuro"] .bg-white .bg-slate-50\/70,
+    html[data-theme="escuro"] .bg-white .bg-slate-50\/80,
+    html[data-theme="escuro"] .bg-white .bg-gray-50\/70,
+    html[data-theme="escuro"] .bg-white .bg-gray-50\/80,
+    html[data-theme="escuro"] .bg-white .bg-gray-100,
+    html[data-theme="escuro"] .bg-white .bg-slate-100,
+    html[data-theme="escuro"] .bg-white .bg-slate-100\/70,
+    html[data-theme="escuro"] .bg-white .bg-slate-100\/80,
+    html[data-theme="escuro"] .bg-white .bg-slate-100\/60,
+    html[data-theme="escuro"] thead.bg-gray-50,
+    html[data-theme="escuro"] tr.bg-slate-50,
+    html[data-theme="escuro"] tr.bg-gray-50 {
+        background-color: #162033 !important;
+    }
+
+    html[data-theme="escuro"] .bg-gray-200,
+    html[data-theme="escuro"] .bg-slate-200 {
+        background-color: #334155 !important;
+    }
+
+    /* Bordas e divisores */
+    html[data-theme="escuro"] .border,
+    html[data-theme="escuro"] .border-b,
+    html[data-theme="escuro"] .border-t,
+    html[data-theme="escuro"] .border-r,
+    html[data-theme="escuro"] .border-l,
+    html[data-theme="escuro"] .border-gray-100,
+    html[data-theme="escuro"] .border-gray-200,
+    html[data-theme="escuro"] .border-gray-300,
+    html[data-theme="escuro"] .border-slate-100,
+    html[data-theme="escuro"] .border-slate-200,
+    html[data-theme="escuro"] .border-slate-300,
+    html[data-theme="escuro"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+    html[data-theme="escuro"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+    html[data-theme="escuro"] .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+    html[data-theme="escuro"] .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+        border-color: #334155 !important;
+    }
+
+    /* Tipografia */
+    html[data-theme="escuro"] .text-gray-900:not(.badge-card *),
+    html[data-theme="escuro"] .text-gray-800:not(.badge-card *),
+    html[data-theme="escuro"] .text-slate-900:not(.badge-card *),
+    html[data-theme="escuro"] .text-slate-800:not(.badge-card *) {
+        color: #f1f5f9 !important;
+    }
+
+    html[data-theme="escuro"] .text-gray-700:not(.badge-card *),
+    html[data-theme="escuro"] .text-slate-700:not(.badge-card *) {
+        color: #e2e8f0 !important;
+    }
+
+    html[data-theme="escuro"] .text-gray-600:not(.badge-card *),
+    html[data-theme="escuro"] .text-slate-600:not(.badge-card *) {
+        color: #cbd5e1 !important;
+    }
+
+    html[data-theme="escuro"] .text-gray-500:not(.badge-card *),
+    html[data-theme="escuro"] .text-slate-500:not(.badge-card *),
+    html[data-theme="escuro"] .text-gray-400:not(.badge-card *),
+    html[data-theme="escuro"] .text-slate-400:not(.badge-card *) {
+        color: #94a3b8 !important;
+    }
+
+    /* Acentos teal mais luminosos para alto contraste em fundo escuro */
+    html[data-theme="escuro"] .text-elo-teal:not(.badge-card *),
+    html[data-theme="escuro"] .text-teal-700:not(.badge-card *),
+    html[data-theme="escuro"] .text-teal-800:not(.badge-card *) {
+        color: #2dd4bf !important;
+    }
+    html[data-theme="escuro"] .hover\:text-teal-900:hover,
+    html[data-theme="escuro"] .hover\:text-elo-teal:hover {
+        color: #5eead4 !important;
+    }
+
+    /* Inputs, selects e textareas */
+    html[data-theme="escuro"] input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="file"]),
+    html[data-theme="escuro"] select,
+    html[data-theme="escuro"] textarea {
+        background-color: #0f172a !important;
+        color: #f1f5f9 !important;
+        border-color: #475569 !important;
+    }
+
+    html[data-theme="escuro"] input::placeholder,
+    html[data-theme="escuro"] textarea::placeholder {
+        color: #64748b !important;
+    }
+
+    html[data-theme="escuro"] input:disabled,
+    html[data-theme="escuro"] select:disabled,
+    html[data-theme="escuro"] textarea:disabled,
+    html[data-theme="escuro"] input[readonly] {
+        background-color: #162033 !important;
+        color: #94a3b8 !important;
+        border-color: #334155 !important;
+    }
+
+    /* Hover em linhas de tabela e botões neutros */
+    html[data-theme="escuro"] .hover\:bg-gray-50:hover,
+    html[data-theme="escuro"] .hover\:bg-gray-50\/80:hover,
+    html[data-theme="escuro"] .hover\:bg-gray-100:hover,
+    html[data-theme="escuro"] .hover\:bg-slate-50:hover,
+    html[data-theme="escuro"] .hover\:bg-slate-100:hover {
+        background-color: #283548 !important;
+    }
+
+    /* Badges e cards semânticos (translúcidos elegantes sobre escuro) */
+    html[data-theme="escuro"] .bg-emerald-50,
+    html[data-theme="escuro"] .bg-emerald-50\/70,
+    html[data-theme="escuro"] .bg-emerald-50\/80,
+    html[data-theme="escuro"] .bg-emerald-100 {
+        background-color: rgba(16, 185, 129, 0.16) !important;
+        border-color: rgba(16, 185, 129, 0.35) !important;
+    }
+    html[data-theme="escuro"] .bg-emerald-200\/80 {
+        background-color: rgba(16, 185, 129, 0.24) !important;
+    }
+    html[data-theme="escuro"] .text-emerald-700,
+    html[data-theme="escuro"] .text-emerald-800,
+    html[data-theme="escuro"] .text-emerald-900 {
+        color: #6ee7b7 !important;
+    }
+
+    html[data-theme="escuro"] .bg-amber-50,
+    html[data-theme="escuro"] .bg-amber-50\/40,
+    html[data-theme="escuro"] .bg-amber-50\/50,
+    html[data-theme="escuro"] .bg-amber-50\/70,
+    html[data-theme="escuro"] .bg-amber-100,
+    html[data-theme="escuro"] .bg-amber-100\/80 {
+        background-color: rgba(245, 158, 11, 0.16) !important;
+        border-color: rgba(245, 158, 11, 0.35) !important;
+    }
+    html[data-theme="escuro"] .bg-amber-200\/80 {
+        background-color: rgba(245, 158, 11, 0.25) !important;
+    }
+    html[data-theme="escuro"] .text-amber-700,
+    html[data-theme="escuro"] .text-amber-800,
+    html[data-theme="escuro"] .text-amber-900,
+    html[data-theme="escuro"] .text-amber-950 {
+        color: #fcd34d !important;
+    }
+
+    html[data-theme="escuro"] .bg-rose-50,
+    html[data-theme="escuro"] .bg-rose-50\/40,
+    html[data-theme="escuro"] .bg-rose-50\/70,
+    html[data-theme="escuro"] .bg-rose-50\/80,
+    html[data-theme="escuro"] .bg-rose-100,
+    html[data-theme="escuro"] .bg-red-50,
+    html[data-theme="escuro"] .bg-red-100 {
+        background-color: rgba(244, 63, 94, 0.16) !important;
+        border-color: rgba(244, 63, 94, 0.35) !important;
+    }
+    html[data-theme="escuro"] .bg-rose-200\/80 {
+        background-color: rgba(244, 63, 94, 0.25) !important;
+    }
+    html[data-theme="escuro"] .text-rose-600,
+    html[data-theme="escuro"] .text-rose-700,
+    html[data-theme="escuro"] .text-rose-800,
+    html[data-theme="escuro"] .text-rose-900,
+    html[data-theme="escuro"] .text-red-600,
+    html[data-theme="escuro"] .text-red-700,
+    html[data-theme="escuro"] .text-red-800 {
+        color: #fda4af !important;
+    }
+
+    html[data-theme="escuro"] .bg-blue-50,
+    html[data-theme="escuro"] .bg-blue-50\/70,
+    html[data-theme="escuro"] .bg-blue-100,
+    html[data-theme="escuro"] .bg-sky-50,
+    html[data-theme="escuro"] .bg-sky-50\/80,
+    html[data-theme="escuro"] .bg-sky-100 {
+        background-color: rgba(56, 189, 248, 0.16) !important;
+        border-color: rgba(56, 189, 248, 0.35) !important;
+    }
+    html[data-theme="escuro"] .bg-blue-200\/80 {
+        background-color: rgba(56, 189, 248, 0.25) !important;
+    }
+    html[data-theme="escuro"] .text-blue-700,
+    html[data-theme="escuro"] .text-blue-800,
+    html[data-theme="escuro"] .text-blue-900,
+    html[data-theme="escuro"] .text-sky-700,
+    html[data-theme="escuro"] .text-sky-800,
+    html[data-theme="escuro"] .text-sky-900 {
+        color: #7dd3fc !important;
+    }
+
+    html[data-theme="escuro"] .bg-purple-50,
+    html[data-theme="escuro"] .bg-purple-50\/80,
+    html[data-theme="escuro"] .bg-purple-100,
+    html[data-theme="escuro"] .bg-indigo-50,
+    html[data-theme="escuro"] .bg-indigo-50\/60,
+    html[data-theme="escuro"] .bg-indigo-100 {
+        background-color: rgba(168, 85, 247, 0.17) !important;
+        border-color: rgba(168, 85, 247, 0.35) !important;
+    }
+    html[data-theme="escuro"] .text-purple-700,
+    html[data-theme="escuro"] .text-purple-800,
+    html[data-theme="escuro"] .text-purple-900,
+    html[data-theme="escuro"] .text-indigo-800 {
+        color: #d8b4fe !important;
+    }
+
+    html[data-theme="escuro"] .bg-orange-50\/60,
+    html[data-theme="escuro"] .bg-orange-100 {
+        background-color: rgba(249, 115, 22, 0.17) !important;
+        border-color: rgba(249, 115, 22, 0.35) !important;
+    }
+    html[data-theme="escuro"] .text-orange-800,
+    html[data-theme="escuro"] .text-orange-900 {
+        color: #fdba74 !important;
+    }
+
+    html[data-theme="escuro"] .bg-teal-50,
+    html[data-theme="escuro"] .bg-teal-50\/25,
+    html[data-theme="escuro"] .bg-teal-50\/30,
+    html[data-theme="escuro"] .bg-teal-50\/35,
+    html[data-theme="escuro"] .bg-teal-50\/40,
+    html[data-theme="escuro"] .bg-teal-50\/60,
+    html[data-theme="escuro"] .bg-teal-100 {
+        background-color: rgba(20, 184, 166, 0.16) !important;
+        border-color: rgba(20, 184, 166, 0.35) !important;
+    }
+    html[data-theme="escuro"] .text-teal-900 {
+        color: #5eead4 !important;
+    }
+
+    /* Preserva botões primários e banners de gradiente com texto branco */
+    html[data-theme="escuro"] .bg-elo-teal,
+    html[data-theme="escuro"] .bg-elo-teal *,
+    html[data-theme="escuro"] .bg-rose-600,
+    html[data-theme="escuro"] .bg-amber-600,
+    html[data-theme="escuro"] .bg-slate-800 {
+        color: #ffffff !important;
+    }
+
+    /* Cards brancos de prévia do crachá continuam em papel branco real */
+    html[data-theme="escuro"] .badge-card {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+}

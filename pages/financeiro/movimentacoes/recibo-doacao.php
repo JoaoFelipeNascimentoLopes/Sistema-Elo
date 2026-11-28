@@ -187,5 +187,13 @@ $pdf->loadHtml(
 );
 $pdf->setPaper('A4', 'portrait');
 $pdf->render();
+appRegistrarAuditoria(
+    'financeiro',
+    'exportar',
+    'Recibo de doação emitido em PDF: ' . $numeroRecibo . ' (' . $recibo['doadorNome'] . ' · ' . $valor . ').',
+    'tbLancamentoFinanceiro',
+    (int) $recibo['idLancamento'],
+    ['numeroRecibo' => $numeroRecibo, 'valor' => $valor, 'doador' => $recibo['doadorNome']]
+);
 $pdf->stream('recibo-doacao-' . (int) $recibo['idLancamento'] . '.pdf', ['Attachment' => true]);
 exit;

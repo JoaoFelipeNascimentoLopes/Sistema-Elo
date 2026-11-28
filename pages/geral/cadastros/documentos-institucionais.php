@@ -37,7 +37,7 @@ $formatarAuditoria = static function ($idUsuario, $nomeUsuario, $dataHora): stri
 $hoje = new DateTimeImmutable('today');
 $classificarSituacao = static function (array $doc) use ($hoje): array {
     if ((int) ($doc['ativo'] ?? 1) !== 1) {
-        return ['chave' => 'inativo', 'label' => 'Arquivado / Inativo', 'detalhe' => 'Inativo', 'classe' => 'bg-gray-200 text-gray-700 border-gray-300'];
+        return ['chave' => 'desatualizado', 'label' => 'Desatualizado', 'detalhe' => 'Substituído / fora dos alertas', 'classe' => 'bg-slate-200 text-slate-700 border-slate-300'];
     }
     if ((int) ($doc['semValidade'] ?? 0) === 1 || empty($doc['dataValidade'])) {
         return ['chave' => 'valido', 'label' => 'Válido (Permanente)', 'detalhe' => 'Sem vencimento', 'classe' => 'bg-emerald-100 text-emerald-800 border-emerald-200'];
@@ -95,6 +95,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $diasAlertaAntes = $diasAlertaInput !== false ? (int) $diasAlertaInput : 30;
             $observacoes = $textoPost('observacoes');
             $ativo = isset($_POST['ativo']) ? 1 : 0;
+            $substituirIdInput = filter_var($_POST['substituirDocumentoId'] ?? 0, FILTER_VALIDATE_INT);
+            $substituirDocumentoId = ($idDocumento === 0 && $substituirIdInput !== false && $substituirIdInput > 0) ? (int) $substituirIdInput : 0;
             $removerArquivo = isset($_POST['removerArquivo']) && (string) $_POST['removerArquivo'] === '1';
             $upload = $_FILES['arquivo'] ?? null;
             $temUpload = is_array($upload) && ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
@@ -111,6 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'diasAlertaAntes' => $diasAlertaAntes,
                 'observacoes' => $observacoes,
                 'ativo' => $ativo,
+                'substituirDocumentoId' => $substituirDocumentoId,
             ];
 
             if ($titulo === '' || mb_strlen($titulo, 'UTF-8') > 150) {
@@ -216,31 +219,108 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            $ins = $pdo->prepare(
-                'INSERT INTO tbDocumentoInstitucional
-                    (titulo, categoria, numeroDocumento, orgaoEmissor, dataEmissao, dataValidade,
-                     semValidade, diasAlertaAntes, caminhoArquivo, nomeOriginalArquivo,
-                     observacoes, ativo, idUsuarioCriacao)
-                 VALUES
-                    (:titulo, :categoria, :numeroDocumento, :orgaoEmissor, :dataEmissao, :dataValidade,
-                     :semValidade, :diasAlertaAntes, :caminhoArquivo, :nomeOriginalArquivo,
-                     :observacoes, :ativo, :uid)'
-            );
-            $params['uid'] = (int) $usuarioAtual['idUsuario'];
-            $ins->execute($params);
-            $novoId = (int) $pdo->lastInsertId();
+            $docSubstituido = null;
+            if ($substituirDocumentoId > 0) {
+                $subChk = $pdo->prepare('SELECT idDocumento, titulo, observacoes FROM tbDocumentoInstitucional WHERE idDocumento = :id AND ativo = 1 LIMIT 1');
+                $subChk->execute(['id' => $substituirDocumentoId]);
+                $docSubstituido = $subChk->fetch(PDO::FETCH_ASSOC) ?: null;
+                if ($docSubstituido === null) {
+                    throw new InvalidArgumentException('O documento anterior selecionado para marcar como desatualizado não foi encontrado ou já está desatualizado.');
+                }
+            }
+
+            $pdo->beginTransaction();
+            try {
+                $ins = $pdo->prepare(
+                    'INSERT INTO tbDocumentoInstitucional
+                        (titulo, categoria, numeroDocumento, orgaoEmissor, dataEmissao, dataValidade,
+                         semValidade, diasAlertaAntes, caminhoArquivo, nomeOriginalArquivo,
+                         observacoes, ativo, idUsuarioCriacao)
+                     VALUES
+                        (:titulo, :categoria, :numeroDocumento, :orgaoEmissor, :dataEmissao, :dataValidade,
+                         :semValidade, :diasAlertaAntes, :caminhoArquivo, :nomeOriginalArquivo,
+                         :observacoes, :ativo, :uid)'
+                );
+                $params['uid'] = (int) $usuarioAtual['idUsuario'];
+                $ins->execute($params);
+                $novoId = (int) $pdo->lastInsertId();
+
+                if ($docSubstituido !== null) {
+                    $notaSubst = 'Substituído por "' . $titulo . '" (#' . $novoId . ') em ' . date('d/m/Y') . '.';
+                    $obsAntiga = trim((string) ($docSubstituido['observacoes'] ?? ''));
+                    $novaObsAntiga = $obsAntiga !== '' ? ($obsAntiga . ' | ' . $notaSubst) : $notaSubst;
+                    $novaObsAntiga = mb_substr($novaObsAntiga, 0, 500, 'UTF-8');
+
+                    $updAntigo = $pdo->prepare(
+                        'UPDATE tbDocumentoInstitucional
+                         SET ativo = 0, observacoes = :obs, idUsuarioAlteracao = :uid
+                         WHERE idDocumento = :id'
+                    );
+                    $updAntigo->execute([
+                        'obs' => $novaObsAntiga,
+                        'uid' => (int) $usuarioAtual['idUsuario'],
+                        'id' => (int) $docSubstituido['idDocumento'],
+                    ]);
+                }
+                $pdo->commit();
+            } catch (Throwable $txErr) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $txErr;
+            }
             $arquivoNovoInfo = null;
 
             appRegistrarAuditoria(
                 'geral',
                 'criar',
-                'Documento institucional cadastrado: ' . $titulo . ' (' . $categoria . ').',
+                'Documento institucional cadastrado: ' . $titulo . ' (' . $categoria . ')'
+                . ($docSubstituido !== null ? ' — substituindo "' . $docSubstituido['titulo'] . '".' : '.'),
                 'tbDocumentoInstitucional',
                 $novoId,
-                ['categoria' => $categoria, 'dataValidade' => $dataValidade ?: null, 'semValidade' => (bool) $semValidade],
+                [
+                    'categoria' => $categoria,
+                    'dataValidade' => $dataValidade ?: null,
+                    'semValidade' => (bool) $semValidade,
+                    'documentoSubstituidoId' => $docSubstituido !== null ? (int) $docSubstituido['idDocumento'] : null,
+                ],
                 $usuarioAtual
             );
-            header('Location: ' . appTabUrl('documentos-institucionais.php?resultado=criado'));
+            header('Location: ' . appTabUrl('documentos-institucionais.php?resultado=' . ($docSubstituido !== null ? 'renovado' : 'criado')));
+            exit;
+        }
+
+        if ($acao === 'alterarStatus') {
+            $idDocumento = filter_var($_POST['idDocumento'] ?? 0, FILTER_VALIDATE_INT);
+            $novoAtivo = ($_POST['novoAtivo'] ?? '0') === '1' ? 1 : 0;
+            if (!$idDocumento || $idDocumento < 1) {
+                throw new InvalidArgumentException('Documento inválido.');
+            }
+            $chk = $pdo->prepare('SELECT titulo, categoria FROM tbDocumentoInstitucional WHERE idDocumento = :id LIMIT 1');
+            $chk->execute(['id' => $idDocumento]);
+            $row = $chk->fetch(PDO::FETCH_ASSOC);
+            if (!$row) {
+                throw new InvalidArgumentException('Documento não encontrado.');
+            }
+            $upd = $pdo->prepare(
+                'UPDATE tbDocumentoInstitucional SET ativo = :ativo, idUsuarioAlteracao = :uid WHERE idDocumento = :id'
+            );
+            $upd->execute([
+                'ativo' => $novoAtivo,
+                'uid' => (int) $usuarioAtual['idUsuario'],
+                'id' => (int) $idDocumento,
+            ]);
+
+            appRegistrarAuditoria(
+                'geral',
+                'editar',
+                'Documento "' . $row['titulo'] . '" marcado como ' . ($novoAtivo === 1 ? 'ativo (monitorado).' : 'desatualizado (fora dos alertas).'),
+                'tbDocumentoInstitucional',
+                (int) $idDocumento,
+                ['ativo' => (bool) $novoAtivo],
+                $usuarioAtual
+            );
+            header('Location: ' . appTabUrl('documentos-institucionais.php?resultado=' . ($novoAtivo === 1 ? 'reativado' : 'desatualizado')));
             exit;
         }
 
@@ -296,6 +376,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $docEdicao = null;
 $idEdicao = filter_input(INPUT_GET, 'editar', FILTER_VALIDATE_INT);
+$idRenovar = filter_input(INPUT_GET, 'renovar', FILTER_VALIDATE_INT);
 if ($formSubmitted !== null && (int) $formSubmitted['idDocumento'] > 0) {
     $idEdicao = (int) $formSubmitted['idDocumento'];
 }
@@ -309,6 +390,25 @@ if ($idEdicao) {
     );
     $st->execute(['id' => $idEdicao]);
     $docEdicao = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+} elseif ($idRenovar && $formSubmitted === null) {
+    $stRen = $pdo->prepare(
+        'SELECT idDocumento, titulo, categoria, orgaoEmissor, diasAlertaAntes
+         FROM tbDocumentoInstitucional
+         WHERE idDocumento = :id AND ativo = 1 LIMIT 1'
+    );
+    $stRen->execute(['id' => $idRenovar]);
+    if ($renRow = $stRen->fetch(PDO::FETCH_ASSOC)) {
+        $docEdicao = [
+            'idDocumento' => 0,
+            'titulo' => (string) $renRow['titulo'],
+            'categoria' => (string) $renRow['categoria'],
+            'orgaoEmissor' => (string) ($renRow['orgaoEmissor'] ?? ''),
+            'diasAlertaAntes' => (int) ($renRow['diasAlertaAntes'] ?? 30),
+            'ativo' => 1,
+            'semValidade' => 0,
+            'substituirDocumentoId' => (int) $renRow['idDocumento'],
+        ];
+    }
 }
 if ($formSubmitted !== null) {
     $docEdicao = array_merge($docEdicao ?? [], $formSubmitted);
@@ -322,7 +422,8 @@ $documentos = $pdo->query(
      ORDER BY d.ativo DESC, d.semValidade ASC, COALESCE(d.dataValidade, \'9999-12-31\') ASC, d.titulo ASC'
 )->fetchAll(PDO::FETCH_ASSOC);
 
-$contadores = ['ativos' => 0, 'validos' => 0, 'vencendo' => 0, 'vencidos' => 0];
+$contadores = ['ativos' => 0, 'validos' => 0, 'vencendo' => 0, 'vencidos' => 0, 'desatualizados' => 0];
+$candidatosSubstituicao = [];
 foreach ($documentos as &$docItem) {
     $sit = $classificarSituacao($docItem);
     $docItem['_situacao'] = $sit;
@@ -335,9 +436,19 @@ foreach ($documentos as &$docItem) {
         } else {
             $contadores['validos']++;
         }
+        $candidatosSubstituicao[] = $docItem;
+    } else {
+        $contadores['desatualizados']++;
     }
 }
 unset($docItem);
+
+usort($candidatosSubstituicao, static function (array $a, array $b): int {
+    $peso = ['vencido' => 0, 'vencendo' => 1, 'valido' => 2];
+    $pa = $peso[$a['_situacao']['chave']] ?? 3;
+    $pb = $peso[$b['_situacao']['chave']] ?? 3;
+    return $pa !== $pb ? ($pa <=> $pb) : strcmp((string) $a['titulo'], (string) $b['titulo']);
+});
 
 $criadoPor = $docEdicao
     ? $formatarAuditoria($docEdicao['idUsuarioCriacao'] ?? null, $docEdicao['nomeUsuarioCriacao'] ?? null, $docEdicao['criadoEm'] ?? null)
@@ -348,7 +459,10 @@ $alteradoPor = $docEdicao
 
 $resultado = [
     'criado' => 'Documento cadastrado com sucesso.',
+    'renovado' => 'Novo documento cadastrado e o documento anterior foi marcado como desatualizado.',
     'atualizado' => 'Documento atualizado com sucesso.',
+    'desatualizado' => 'Documento marcado como desatualizado e removido dos alertas de vencimento.',
+    'reativado' => 'Documento reativado e recolocado no monitoramento de validade.',
     'excluido' => 'Documento excluído com sucesso.',
 ][(string) ($_GET['resultado'] ?? '')] ?? '';
 $abaInicial = ($docEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'manutencao') ? 'manutencao' : 'pesquisa';
@@ -423,6 +537,30 @@ $abaInicial = ($docEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'manutenca
                     <input type="hidden" name="acao" value="salvar">
                     <input type="hidden" name="idDocumento" value="<?php echo (int) ($docEdicao['idDocumento'] ?? 0); ?>">
 
+                    <?php if (empty($docEdicao['idDocumento']) && !empty($candidatosSubstituicao)): ?>
+                        <?php $subAtual = (int) ($docEdicao['substituirDocumentoId'] ?? 0); ?>
+                        <fieldset class="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+                            <legend class="px-2 text-sm font-semibold text-amber-900">Renovação / Substituição (opcional)</legend>
+                            <label class="block text-sm font-medium text-amber-950">Marcar documento anterior como <strong>Desatualizado</strong> ao salvar este novo
+                                <select name="substituirDocumentoId" class="mt-1.5 w-full rounded border border-amber-300 bg-white px-3 py-2 text-sm text-gray-800">
+                                    <option value="">Não substituir nenhum documento anterior</option>
+                                    <?php foreach ($candidatosSubstituicao as $cand): ?>
+                                        <?php
+                                        $stCand = $cand['_situacao'];
+                                        $valTxt = !empty($cand['dataValidade']) && (int) $cand['semValidade'] !== 1
+                                            ? ' · Val.: ' . date('d/m/Y', strtotime((string) $cand['dataValidade']))
+                                            : '';
+                                        ?>
+                                        <option value="<?php echo (int) $cand['idDocumento']; ?>" <?php echo $subAtual === (int) $cand['idDocumento'] ? 'selected' : ''; ?>>
+                                            <?php echo appEscape('[' . strtoupper($stCand['label']) . '] ' . $cand['titulo'] . ' (' . $cand['categoria'] . ')' . $valTxt); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                            <p class="mt-1.5 text-xs text-amber-800">O documento selecionado sairá imediatamente dos alertas de vencidos/vencendo, mas continuará salvo no histórico com o anexo original.</p>
+                        </fieldset>
+                    <?php endif; ?>
+
                     <fieldset class="grid gap-4 rounded-lg border border-gray-200 p-4 md:grid-cols-3">
                         <legend class="px-2 text-sm font-semibold text-gray-700">1. Identificação do documento</legend>
                         <label class="text-sm font-medium text-gray-700 md:col-span-2">Título do documento *
@@ -481,7 +619,7 @@ $abaInicial = ($docEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'manutenca
                             <input type="checkbox" name="ativo" value="1"
                                    <?php echo (int) ($docEdicao['ativo'] ?? 1) === 1 ? 'checked' : ''; ?>
                                    class="rounded border-gray-300 text-elo-teal focus:ring-elo-teal">
-                            Documento ativo (monitorar vencimento)
+                            Documento vigente / monitorar validade (desmarque para marcar como desatualizado)
                         </label>
                     </fieldset>
 
@@ -631,6 +769,39 @@ $abaInicial = ($docEdicao || $erro !== '' || ($_GET['aba'] ?? '') === 'manutenca
                                     </td>
                                     <td class="whitespace-nowrap p-3">
                                         <div class="flex items-center gap-2">
+                                            <?php if (in_array($sit['chave'], ['vencido', 'vencendo'], true)): ?>
+                                                <a href="<?php echo appEscape(appTabUrl($urlAtual . '?renovar=' . (int) $item['idDocumento'] . '#manutencao')); ?>"
+                                                   aria-label="Renovar <?php echo appEscape((string) $item['titulo']); ?>"
+                                                   title="Subir nova versão e marcar este como desatualizado"
+                                                   class="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100">
+                                                    <i class="ph ph-arrows-clockwise text-sm" aria-hidden="true"></i> Renovar
+                                                </a>
+                                            <?php endif; ?>
+                                            <?php if ((int) $item['ativo'] === 1): ?>
+                                                <form method="post" data-confirm="Marcar '<?php echo appEscape((string) $item['titulo']); ?>' como desatualizado? Ele sairá dos alertas de vencimento mas permanecerá no histórico.">
+                                                    <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
+                                                    <input type="hidden" name="acao" value="alterarStatus">
+                                                    <input type="hidden" name="idDocumento" value="<?php echo (int) $item['idDocumento']; ?>">
+                                                    <input type="hidden" name="novoAtivo" value="0">
+                                                    <button type="submit" aria-label="Marcar <?php echo appEscape((string) $item['titulo']); ?> como desatualizado"
+                                                            title="Marcar como desatualizado (remover dos alertas)"
+                                                            class="inline-flex h-9 w-9 items-center justify-center rounded border border-slate-300 text-slate-600 hover:bg-slate-100">
+                                                        <i class="ph ph-archive text-lg" aria-hidden="true"></i>
+                                                    </button>
+                                                </form>
+                                            <?php else: ?>
+                                                <form method="post" data-confirm="Reativar '<?php echo appEscape((string) $item['titulo']); ?>' para voltar a monitorar a validade?">
+                                                    <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
+                                                    <input type="hidden" name="acao" value="alterarStatus">
+                                                    <input type="hidden" name="idDocumento" value="<?php echo (int) $item['idDocumento']; ?>">
+                                                    <input type="hidden" name="novoAtivo" value="1">
+                                                    <button type="submit" aria-label="Reativar <?php echo appEscape((string) $item['titulo']); ?>"
+                                                            title="Reativar monitoramento de validade"
+                                                            class="inline-flex h-9 w-9 items-center justify-center rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                                                        <i class="ph ph-arrow-u-up-left text-lg" aria-hidden="true"></i>
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
                                             <a href="<?php echo appEscape(appTabUrl($urlAtual . '?editar=' . (int) $item['idDocumento'] . '#manutencao')); ?>"
                                                aria-label="Editar <?php echo appEscape((string) $item['titulo']); ?>"
                                                title="Editar documento"

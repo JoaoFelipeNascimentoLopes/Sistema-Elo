@@ -1321,6 +1321,73 @@ runWhenReady(() => {
         render();
     });
 
+    document.querySelectorAll('[data-theme-picker]').forEach((picker) => {
+        const updateUrl = picker.dataset.themeUrl || '';
+        const csrfToken = picker.dataset.csrf || '';
+        const fallbackTabToken = picker.dataset.tabToken || '';
+        const statusEl = picker.querySelector('[data-theme-status]');
+        const buttons = Array.from(picker.querySelectorAll('[data-theme-choice]'));
+        const currentLabels = Array.from(document.querySelectorAll('[data-theme-current-label]'));
+
+        const syncThemeUi = (theme) => {
+            document.documentElement.dataset.theme = theme;
+            buttons.forEach((btn) => {
+                const active = btn.dataset.themeChoice === theme;
+                btn.classList.toggle('border-elo-teal', active);
+                btn.classList.toggle('bg-elo-teal/5', active);
+                btn.classList.toggle('border-gray-200', !active);
+                const check = btn.querySelector(`[data-theme-check="${btn.dataset.themeChoice}"]`);
+                if (check) check.classList.toggle('hidden', !active);
+            });
+            currentLabels.forEach((lbl) => {
+                lbl.textContent = theme === 'escuro' ? 'Escuro' : 'Claro';
+            });
+        };
+
+        buttons.forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const chosen = btn.dataset.themeChoice;
+                if (!['claro', 'escuro'].includes(chosen)) return;
+                const previous = document.documentElement.dataset.theme === 'escuro' ? 'escuro' : 'claro';
+                syncThemeUi(chosen);
+                if (statusEl) {
+                    statusEl.textContent = 'Salvando preferência...';
+                    statusEl.className = 'mt-4 min-h-[1.25rem] text-xs font-medium text-elo-teal';
+                }
+
+                const body = new FormData();
+                body.set('csrfToken', csrfToken);
+                body.set('tabToken', new URLSearchParams(window.location.search).get('tabToken')
+                    || window.sessionStorage.getItem('sistemaEloTabToken') || fallbackTabToken);
+                body.set('tema', chosen);
+
+                try {
+                    const res = await fetch(updateUrl, {
+                        method: 'POST',
+                        body,
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                        credentials: 'same-origin',
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.ok) {
+                        throw new Error(data.message || 'Não foi possível salvar o tema.');
+                    }
+                    if (statusEl) {
+                        statusEl.textContent = chosen === 'escuro'
+                            ? 'Tema escuro salvo para o seu login.'
+                            : 'Tema claro salvo para o seu login.';
+                    }
+                } catch (err) {
+                    syncThemeUi(previous);
+                    if (statusEl) {
+                        statusEl.textContent = err.message || 'Erro ao salvar tema.';
+                        statusEl.className = 'mt-4 min-h-[1.25rem] text-xs font-medium text-rose-600';
+                    }
+                }
+            });
+        });
+    });
+
     document.querySelectorAll('[data-toast]').forEach((toast) => {
         window.setTimeout(() => dismissToast(toast), 4000);
     });

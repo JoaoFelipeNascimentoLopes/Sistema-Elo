@@ -273,7 +273,7 @@ function appCurrentUser(): ?array
 
     $query = appPdo()->prepare(
         'SELECT u.idUsuario, u.nomeCompleto, u.login, u.ativo, u.bloqueado,
-                u.forcarTrocaSenha, u.tempoExpiracaoSessao, p.idPerfil, p.nomePerfil,
+                u.forcarTrocaSenha, u.tempoExpiracaoSessao, u.tema, p.idPerfil, p.nomePerfil,
                 p.permissoes, p.administradorGlobal
          FROM tbUsuario u
          INNER JOIN tbPerfilAcesso p ON p.idPerfil = u.idPerfil
@@ -466,6 +466,9 @@ function appRequirePage(string $pageKey): array
         exit('Acesso negado: seu perfil não permite acessar esta tela.');
     }
 
+    $GLOBALS['__appCurrentPageKey'] = $pageKey;
+    $GLOBALS['__appCurrentPageUser'] = $user;
+
     return $user;
 }
 
@@ -486,6 +489,155 @@ function appValidateCsrf(): void
     if (!is_string($submitted) || !hash_equals(appCsrfToken(), $submitted)) {
         http_response_code(400);
         exit('Solicitação inválida. Atualize a página e tente novamente.');
+    }
+
+    if (empty($GLOBALS['__appAutoAuditRegistered'])) {
+        $GLOBALS['__appAutoAuditRegistered'] = true;
+        register_shutdown_function('appRegistrarAuditoriaAutomatica');
+    }
+}
+
+function appRegistrarAuditoriaAutomatica(): void
+{
+    try {
+        if (!empty($GLOBALS['__appAuditoriaRegistrada'])
+            || ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+            return;
+        }
+        $lastError = error_get_last();
+        if ($lastError !== null && in_array($lastError['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+            return;
+        }
+        $statusCode = http_response_code();
+        if (is_int($statusCode) && $statusCode >= 400) {
+            return;
+        }
+
+        $pageKey = is_string($GLOBALS['__appCurrentPageKey'] ?? null) ? $GLOBALS['__appCurrentPageKey'] : '';
+        if ($pageKey === '') {
+            return;
+        }
+
+        $acaoPost = is_scalar($_POST['acao'] ?? null) ? trim((string) $_POST['acao']) : '';
+        $reportAction = is_scalar($_POST['reportAction'] ?? null) ? trim((string) $_POST['reportAction']) : '';
+
+        // Ignora consultas AJAX somente leitura e prévias/configurações de relatório
+        if ($acaoPost !== '' && preg_match('/^(buscar|consultar|listar|detalhar|pesquisar|obter|carregar)/i', $acaoPost)) {
+            return;
+        }
+        if ($reportAction !== '' && $reportAction !== 'download') {
+            return;
+        }
+
+        $headers = headers_list();
+        $locationHeader = null;
+        $isJson = false;
+        $isPdfOrDownload = false;
+        foreach ($headers as $h) {
+            if (stripos($h, 'Location:') === 0) {
+                $locationHeader = trim(substr($h, 9));
+            } elseif (stripos($h, 'Content-Type:') === 0 && stripos($h, 'application/json') !== false) {
+                $isJson = true;
+            } elseif ((stripos($h, 'Content-Type:') === 0 && stripos($h, 'application/pdf') !== false)
+                || (stripos($h, 'Content-Disposition:') === 0 && stripos($h, 'attachment') !== false)) {
+                $isPdfOrDownload = true;
+            }
+        }
+
+        // Só registra mutações efetivamente concluídas (PRG redirect, download PDF ou mutação AJAX JSON 2xx)
+        if ($locationHeader === null && !$isPdfOrDownload && !($isJson && $acaoPost !== '')) {
+            return;
+        }
+
+        $parts = explode('.', $pageKey, 2);
+        $modulo = $parts[0] !== '' ? $parts[0] : 'geral';
+        $subKey = $parts[1] ?? '';
+        $catalog = appPageCatalog();
+        $pageLabel = $catalog[$modulo]['paginas'][$subKey]['nome'] ?? $pageKey;
+
+        $resultadoRedirect = '';
+        if ($locationHeader !== null) {
+            $queryStr = parse_url($locationHeader, PHP_URL_QUERY);
+            if (is_string($queryStr)) {
+                parse_str($queryStr, $qParams);
+                if (is_scalar($qParams['resultado'] ?? null)) {
+                    $resultadoRedirect = strtolower(trim((string) $qParams['resultado']));
+                }
+            }
+        }
+
+        // Determina ação semântica padronizada
+        if ($isPdfOrDownload || $reportAction === 'download') {
+            $acao = 'exportar';
+        } elseif (stripos($acaoPost, 'excluir') !== false || stripos($acaoPost, 'remover') !== false || stripos($acaoPost, 'deletar') !== false || str_contains($resultadoRedirect, 'exclu')) {
+            $acao = 'excluir';
+        } elseif (str_contains($resultadoRedirect, 'criad') || str_contains($resultadoRedirect, 'cadastrad') || str_contains($resultadoRedirect, 'alocad') || str_contains($resultadoRedirect, 'admitid') || stripos($acaoPost, 'criar') !== false || stripos($acaoPost, 'inserir') !== false) {
+            $acao = 'criar';
+        } elseif (str_contains($resultadoRedirect, 'atualizad') || str_contains($resultadoRedirect, 'editad') || str_contains($resultadoRedirect, 'transferid') || str_contains($resultadoRedirect, 'remanejad') || str_contains($resultadoRedirect, 'encerrad') || str_contains($resultadoRedirect, 'desligad') || str_contains($resultadoRedirect, 'alterad')) {
+            $acao = 'editar';
+        } else {
+            // Fallback por presença de ID positivo no POST
+            $temIdEdicao = false;
+            foreach ($_POST as $k => $v) {
+                if (is_string($k) && preg_match('/^id[A-Z]/', $k) && is_scalar($v) && ctype_digit((string) $v) && (int) $v > 0) {
+                    $temIdEdicao = true;
+                    break;
+                }
+            }
+            $acao = $temIdEdicao ? 'editar' : 'criar';
+        }
+
+        // Extrai possível ID do registro manipulado
+        $idRegistro = null;
+        foreach ($_POST as $k => $v) {
+            if (is_string($k) && ($k === 'id' || preg_match('/^id[A-Z]/', $k)) && is_scalar($v) && ctype_digit((string) $v) && (int) $v > 0) {
+                $idRegistro = (int) $v;
+                break;
+            }
+        }
+
+        // Monta descrição legível
+        $verbos = [
+            'criar' => 'Registro criado em ',
+            'editar' => 'Registro atualizado em ',
+            'excluir' => 'Registro excluído em ',
+            'exportar' => 'Relatório/documento exportado em ',
+        ];
+        $descricao = ($verbos[$acao] ?? 'Operação realizada em ') . $pageLabel;
+        if ($resultadoRedirect !== '') {
+            $descricao .= ' (' . str_replace('-', ' ', $resultadoRedirect) . ')';
+        }
+        $descricao .= '.';
+
+        // Captura metadados seguros (nunca inclui senhas ou tokens)
+        $detalhes = ['tela' => $pageKey];
+        if ($acaoPost !== '') {
+            $detalhes['acaoFormulario'] = $acaoPost;
+        }
+        if ($resultadoRedirect !== '') {
+            $detalhes['resultado'] = $resultadoRedirect;
+        }
+        $camposSensiveis = ['csrfToken', 'tabToken', 'senha', 'password', 'senhaAtual', 'novaSenha', 'confirmarSenha'];
+        $camposResumo = [];
+        foreach ($_POST as $k => $v) {
+            if (!is_string($k) || in_array($k, $camposSensiveis, true) || stripos($k, 'senha') !== false || stripos($k, 'token') !== false) {
+                continue;
+            }
+            if (is_scalar($v)) {
+                $val = trim((string) $v);
+                if ($val !== '' && in_array($k, ['nome', 'nomeCompleto', 'nomeCategoria', 'nomeFonte', 'nomeFormaPagamento', 'nomeRazaoSocial', 'titulo', 'descricao', 'descricaoLancamento', 'valorLancamento', 'valorOrcado', 'statusLancamento', 'ano', 'mes', 'codigo'], true)) {
+                    $camposResumo[$k] = mb_substr($val, 0, 80, 'UTF-8');
+                }
+            }
+        }
+        if ($camposResumo) {
+            $detalhes['campos'] = $camposResumo;
+        }
+
+        $usuario = is_array($GLOBALS['__appCurrentPageUser'] ?? null) ? $GLOBALS['__appCurrentPageUser'] : null;
+        appRegistrarAuditoria($modulo, $acao, $descricao, $pageLabel, $idRegistro, $detalhes, $usuario);
+    } catch (Throwable $e) {
+        error_log('Falha na auditoria automática global: ' . $e->getMessage());
     }
 }
 
@@ -619,6 +771,7 @@ function appRegistrarAuditoria(
     ?string $loginInformado = null
 ): void {
     try {
+        $GLOBALS['__appAuditoriaRegistrada'] = true;
         $ator = $usuario;
         if ($ator === null && $loginInformado === null) {
             $ator = appCurrentUser();

@@ -1,3 +1,11 @@
+<?php
+$temaAtualUsuario = (isset($usuarioAtual['tema']) && $usuarioAtual['tema'] === 'escuro') ? 'escuro' : 'claro';
+$themeCssPath = __DIR__ . '/../assets/css/theme-dark.css';
+$themeCssVer = is_file($themeCssPath) ? (string) filemtime($themeCssPath) : '1';
+?>
+<link rel="stylesheet" href="<?php echo appEscape($baseUrl . '/assets/css/theme-dark.css?v=' . $themeCssVer); ?>">
+<script>document.documentElement.dataset.theme = <?php echo json_encode($temaAtualUsuario, JSON_THROW_ON_ERROR); ?>;</script>
+
 <div id="configuracoesModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 flex">
     <div class="relative w-[450px] max-w-[95%] rounded-xl bg-white p-6 shadow-2xl">
         <button type="button" data-modal-toggle="configuracoesModal" class="absolute right-4 top-4 text-gray-400 transition-colors hover:text-gray-700" aria-label="Fechar">
@@ -16,6 +24,68 @@
                 <span class="font-medium">Informações da Instituição</span>
             </button>
         <?php endif; ?>
+        <button type="button" data-modal-toggle="temaSistemaModal"
+           class="mt-3 flex w-full items-center justify-between gap-3 rounded-lg border p-4 text-left text-gray-700 transition-colors hover:border-elo-green hover:bg-elo-green/10 hover:text-elo-teal">
+            <span class="flex items-center gap-3">
+                <i class="ph ph-moon-stars text-2xl" aria-hidden="true"></i>
+                <span class="font-medium">Aparência e Tema</span>
+            </span>
+            <span data-theme-current-label class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-700">
+                <?php echo $temaAtualUsuario === 'escuro' ? 'Escuro' : 'Claro'; ?>
+            </span>
+        </button>
+    </div>
+</div>
+
+<div id="temaSistemaModal" class="fixed inset-0 z-[60] hidden flex items-center justify-center bg-black/50 p-4"
+     data-theme-picker
+     data-theme-url="<?php echo appEscape($baseUrl . '/auth/update-theme.php'); ?>"
+     data-csrf="<?php echo appEscape(appCsrfToken()); ?>"
+     data-tab-token="<?php echo appEscape((string) appCurrentTabToken()); ?>">
+    <div class="relative w-[480px] max-w-[95%] rounded-xl bg-white p-6 shadow-2xl">
+        <button type="button" data-modal-toggle="temaSistemaModal" class="absolute right-4 top-4 text-gray-400 transition-colors hover:text-gray-700" aria-label="Fechar">
+            <i class="ph ph-x text-2xl" aria-hidden="true"></i>
+        </button>
+        <h2 class="mb-1 pr-8 text-xl font-semibold text-gray-800">Aparência e Tema</h2>
+        <p class="mb-5 text-sm text-gray-600">Escolha o tema da interface. A preferência fica salva automaticamente no seu login.</p>
+        <div class="grid grid-cols-2 gap-3">
+            <button type="button" data-theme-choice="claro"
+                    class="flex flex-col items-start gap-3 rounded-xl border-2 p-4 text-left transition <?php echo $temaAtualUsuario === 'claro' ? 'border-elo-teal bg-elo-teal/5' : 'border-gray-200 hover:border-elo-teal/50'; ?>">
+                <div data-theme-preview="claro" class="w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-2">
+                    <div class="mb-1.5 h-2.5 w-full rounded bg-elo-teal"></div>
+                    <div class="space-y-1">
+                        <div class="h-2 w-3/4 rounded bg-gray-300"></div>
+                        <div class="h-2 w-1/2 rounded bg-gray-200"></div>
+                    </div>
+                </div>
+                <div class="flex w-full items-center justify-between">
+                    <span class="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
+                        <i class="ph ph-sun text-lg text-amber-500" aria-hidden="true"></i> Claro
+                    </span>
+                    <i data-theme-check="claro" class="ph-fill ph-check-circle text-lg text-elo-teal <?php echo $temaAtualUsuario === 'claro' ? '' : 'hidden'; ?>" aria-hidden="true"></i>
+                </div>
+                <span class="text-xs text-gray-500">Padrão do sistema</span>
+            </button>
+
+            <button type="button" data-theme-choice="escuro"
+                    class="flex flex-col items-start gap-3 rounded-xl border-2 p-4 text-left transition <?php echo $temaAtualUsuario === 'escuro' ? 'border-elo-teal bg-elo-teal/5' : 'border-gray-200 hover:border-elo-teal/50'; ?>">
+                <div data-theme-preview="escuro" class="w-full overflow-hidden rounded-lg border border-slate-700 bg-slate-900 p-2">
+                    <div class="mb-1.5 h-2.5 w-full rounded bg-[#005f6b]"></div>
+                    <div class="space-y-1">
+                        <div class="h-2 w-3/4 rounded bg-slate-600"></div>
+                        <div class="h-2 w-1/2 rounded bg-slate-700"></div>
+                    </div>
+                </div>
+                <div class="flex w-full items-center justify-between">
+                    <span class="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
+                        <i class="ph ph-moon-stars text-lg text-indigo-400" aria-hidden="true"></i> Escuro
+                    </span>
+                    <i data-theme-check="escuro" class="ph-fill ph-check-circle text-lg text-elo-teal <?php echo $temaAtualUsuario === 'escuro' ? '' : 'hidden'; ?>" aria-hidden="true"></i>
+                </div>
+                <span class="text-xs text-gray-500">Conforto visual noturno</span>
+            </button>
+        </div>
+        <p data-theme-status role="status" aria-live="polite" class="mt-4 min-h-[1.25rem] text-xs font-medium text-elo-teal"></p>
     </div>
 </div>
 

@@ -373,7 +373,7 @@ $acoesAuditoriaLabels = [
                     </article>
                 </section>
 
-                <section class="grid gap-4 xl:grid-cols-3">
+                <section class="grid items-start gap-4 xl:grid-cols-3">
                     <div class="space-y-4 xl:col-span-2">
                         <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                             <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -547,6 +547,47 @@ $acoesAuditoriaLabels = [
                             </div>
                         <?php endif; ?>
                         </article>
+
+                        <?php if ($podeVerAuditoria): ?>
+                            <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+                                <div class="mb-4 flex items-center justify-between gap-3">
+                                    <h2 class="flex items-center gap-2 font-bold text-slate-900">
+                                        <i class="ph ph-clock-counter-clockwise text-lg text-elo-teal" aria-hidden="true"></i>
+                                        Atividade Recente do Sistema
+                                    </h2>
+                                    <a href="<?php echo appEscape(appTabUrl($baseUrl . '/pages/geral/movimentacoes/log-auditoria.php')); ?>"
+                                       class="text-xs font-semibold text-teal-700 hover:text-teal-900">
+                                        Ver log completo
+                                    </a>
+                                </div>
+                                <?php if (!$eventosRecentes): ?>
+                                    <p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhum evento de auditoria registrado ainda.</p>
+                                <?php else: ?>
+                                    <div class="divide-y divide-slate-100">
+                                        <?php foreach ($eventosRecentes as $ev): ?>
+                                            <?php
+                                            $acaoMeta = $acoesAuditoriaLabels[$ev['acao']] ?? ['label' => $ev['acao'], 'classe' => 'bg-slate-100 text-slate-700'];
+                                            $atorTexto = $ev['nomeUsuario'] !== null ? $ev['nomeUsuario'] : ($ev['loginInformado'] ?? 'Sistema');
+                                            ?>
+                                            <div class="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+                                                <div class="min-w-0 flex-1">
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold <?php echo $acaoMeta['classe']; ?>">
+                                                            <?php echo appEscape($acaoMeta['label']); ?>
+                                                        </span>
+                                                        <span class="truncate font-medium text-slate-800" data-preserve-case><?php echo appEscape((string) $ev['descricao']); ?></span>
+                                                    </div>
+                                                    <p class="mt-0.5 text-xs text-slate-500" data-preserve-case><?php echo appEscape((string) $atorTexto); ?></p>
+                                                </div>
+                                                <span class="whitespace-nowrap text-xs text-slate-400" data-preserve-case>
+                                                    <?php echo appEscape(date('d/m/Y H:i', strtotime((string) $ev['dataHora']))); ?>
+                                                </span>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                            </article>
+                        <?php endif; ?>
                     </div>
 
                     <div class="space-y-4">
@@ -706,70 +747,27 @@ $acoesAuditoriaLabels = [
                                 </dl>
                             </article>
                         <?php endif; ?>
-                    </div>
-                </section>
 
-                <section class="grid gap-4 xl:grid-cols-3">
-                    <?php if ($podeVerAuditoria): ?>
-                        <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm xl:col-span-2">
-                            <div class="mb-4 flex items-center justify-between gap-3">
-                                <h2 class="flex items-center gap-2 font-bold text-slate-900">
-                                    <i class="ph ph-clock-counter-clockwise text-lg text-elo-teal" aria-hidden="true"></i>
-                                    Atividade Recente do Sistema
-                                </h2>
-                                <a href="<?php echo appEscape(appTabUrl($baseUrl . '/pages/geral/movimentacoes/log-auditoria.php')); ?>"
-                                   class="text-xs font-semibold text-teal-700 hover:text-teal-900">
-                                    Ver log completo
-                                </a>
-                            </div>
-                            <?php if (!$eventosRecentes): ?>
-                                <p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhum evento de auditoria registrado ainda.</p>
+                        <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+                            <h2 class="mb-4 font-bold text-slate-900">Acesso Rápido</h2>
+                            <?php if (!$atalhos): ?>
+                                <p class="text-sm text-slate-500">Use o menu lateral para navegar pelas telas liberadas ao seu perfil.</p>
                             <?php else: ?>
-                                <div class="divide-y divide-slate-100">
-                                    <?php foreach ($eventosRecentes as $ev): ?>
-                                        <?php
-                                        $acaoMeta = $acoesAuditoriaLabels[$ev['acao']] ?? ['label' => $ev['acao'], 'classe' => 'bg-slate-100 text-slate-700'];
-                                        $atorTexto = $ev['nomeUsuario'] !== null ? $ev['nomeUsuario'] : ($ev['loginInformado'] ?? 'Sistema');
-                                        ?>
-                                        <div class="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
-                                            <div class="min-w-0 flex-1">
-                                                <div class="flex items-center gap-2">
-                                                    <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold <?php echo $acaoMeta['classe']; ?>">
-                                                        <?php echo appEscape($acaoMeta['label']); ?>
-                                                    </span>
-                                                    <span class="truncate font-medium text-slate-800" data-preserve-case><?php echo appEscape((string) $ev['descricao']); ?></span>
-                                                </div>
-                                                <p class="mt-0.5 text-xs text-slate-500" data-preserve-case><?php echo appEscape((string) $atorTexto); ?></p>
-                                            </div>
-                                            <span class="whitespace-nowrap text-xs text-slate-400" data-preserve-case>
-                                                <?php echo appEscape(date('d/m/Y H:i', strtotime((string) $ev['dataHora']))); ?>
+                                <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                                    <?php foreach ($atalhos as $atalho): ?>
+                                        <a href="<?php echo appEscape(appTabUrl($atalho['url'])); ?>"
+                                           class="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-3.5 py-2.5 text-sm font-medium text-slate-700 transition hover:border-elo-teal/40 hover:bg-elo-teal/5 hover:text-elo-teal">
+                                            <span class="flex items-center gap-2.5">
+                                                <i class="ph <?php echo appEscape($atalho['icone']); ?> text-lg text-elo-teal" aria-hidden="true"></i>
+                                                <?php echo appEscape($atalho['titulo']); ?>
                                             </span>
-                                        </div>
+                                            <i class="ph ph-caret-right text-slate-400" aria-hidden="true"></i>
+                                        </a>
                                     <?php endforeach; ?>
                                 </div>
                             <?php endif; ?>
                         </article>
-                    <?php endif; ?>
-
-                    <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm <?php echo $podeVerAuditoria ? '' : 'xl:col-span-3'; ?>">
-                        <h2 class="mb-4 font-bold text-slate-900">Acesso Rápido</h2>
-                        <?php if (!$atalhos): ?>
-                            <p class="text-sm text-slate-500">Use o menu lateral para navegar pelas telas liberadas ao seu perfil.</p>
-                        <?php else: ?>
-                            <div class="grid gap-2 <?php echo $podeVerAuditoria ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-1' : 'sm:grid-cols-2 lg:grid-cols-4'; ?>">
-                                <?php foreach ($atalhos as $atalho): ?>
-                                    <a href="<?php echo appEscape(appTabUrl($atalho['url'])); ?>"
-                                       class="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-3.5 py-2.5 text-sm font-medium text-slate-700 transition hover:border-elo-teal/40 hover:bg-elo-teal/5 hover:text-elo-teal">
-                                        <span class="flex items-center gap-2.5">
-                                            <i class="ph <?php echo appEscape($atalho['icone']); ?> text-lg text-elo-teal" aria-hidden="true"></i>
-                                            <?php echo appEscape($atalho['titulo']); ?>
-                                        </span>
-                                        <i class="ph ph-caret-right text-slate-400" aria-hidden="true"></i>
-                                    </a>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php endif; ?>
-                    </article>
+                    </div>
                 </section>
             </div>
         </main>
