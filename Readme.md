@@ -75,9 +75,10 @@ O **Sistema Elo** é uma aplicação web desenvolvida para centralizar e organiz
 ### Módulo Financeiro
 
 - **Dashboard Financeiro**
-  - Indicadores do mês atual: saldo acumulado, entradas efetivadas, saídas efetivadas, saldo mensal e resumo de pendências, com modo de privacidade (*Ocultar valores*).
-  - Comparativo histórico dos últimos 6 meses (entradas × saídas efetivadas).
-  - Gráfico de distribuição de saídas por categoria no mês vigente.
+  - Seletor de **mês e ano de competência** (`<` / `>` / seletor mensal / botão *Mês atual*) para consultar tanto o mês vigente quanto fechamentos anteriores.
+  - Indicadores da competência: saldo líquido acumulado (total ou acumulado até a competência consultada), entradas efetivadas, saídas efetivadas, saldo mensal e resumo de pendências, com modo de privacidade (*Ocultar valores*).
+  - Comparativo histórico de 6 meses (entradas × saídas efetivadas).
+  - Gráfico de distribuição de saídas por categoria na competência selecionada.
   - Barra de acompanhamento da **meta orçamentária mensal**.
   - Listagem rápida dos lançamentos mais recentes.
 - **Cadastros**
@@ -87,7 +88,7 @@ O **Sistema Elo** é uma aplicação web desenvolvida para centralizar e organiz
   - **Fornecedores/Prestadores:** cadastro para Pessoa Física ou Jurídica com CPF/CNPJ único, dados de contato e observações.
   - **Doadores/Contribuintes:** cadastro para Pessoa Física ou Jurídica com CPF/CNPJ único e endereço assistido via ViaCEP.
 - **Movimentações**
-  - **Lançamentos Financeiros:** controle de receitas e despesas com status (`Pendente` ou `Efetivado`) e seleção via comboboxes pesquisáveis AJAX para categoria, fonte de recurso, forma de pagamento, fornecedor ou doador.
+  - **Lançamentos Financeiros:** controle de receitas e despesas com status (`Pendente` ou `Efetivado`), **baixa rápida em 1 clique (*Efetivar*)** direto na listagem, **anexo privado de comprovante/nota fiscal** (PDF, JPG, PNG ou WebP até 10 MB em `uploads/comprovantes-financeiros/` com visualizador em modal na mesma aba) e seleção via comboboxes pesquisáveis AJAX para categoria, fonte de recurso, forma de pagamento, fornecedor ou doador.
   - **Recibo de Doação (PDF):** emissão de comprovante numerado (`REC-AAAA-NNNNNN`) via Dompdf para doações efetivadas com doador identificado, preenchido com os dados da instituição e do doador.
   - **Metas Orçamentárias:** definição de valor orçado por competência (ano/mês) com detalhamento de despesas efetivadas e pendentes.
 - **Relatórios (com filtros, agrupamentos e exportação em PDF)**

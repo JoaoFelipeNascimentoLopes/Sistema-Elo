@@ -11,7 +11,26 @@ $meses = [
 $formatarMoeda = static function (float $valor): string {
     return 'R$ ' . number_format($valor, 2, ',', '.');
 };
-$inicioMesAtual = new DateTimeImmutable('first day of this month');
+$mesAtualReal = new DateTimeImmutable('first day of this month');
+$competenciaInput = is_scalar($_GET['competencia'] ?? null) ? trim((string) $_GET['competencia']) : '';
+$inicioMesAtual = $mesAtualReal;
+if (preg_match('/^(\d{4})-(0[1-9]|1[0-2])$/', $competenciaInput, $compMatch)) {
+    $anoSel = (int) $compMatch[1];
+    $mesSel = (int) $compMatch[2];
+    if ($anoSel >= 2000 && $anoSel <= 2100) {
+        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', sprintf('%04d-%02d-01', $anoSel, $mesSel));
+        if ($parsed !== false) {
+            $inicioMesAtual = $parsed;
+        }
+    }
+}
+$competenciaSelecionada = $inicioMesAtual->format('Y-m');
+$isMesAtual = $competenciaSelecionada === $mesAtualReal->format('Y-m');
+$competenciaAnterior = $inicioMesAtual->modify('-1 month')->format('Y-m');
+$competenciaProxima = $inicioMesAtual->modify('+1 month')->format('Y-m');
+$rotuloCompetencia = $meses[(int) $inicioMesAtual->format('n')] . ' de ' . $inicioMesAtual->format('Y');
+$rotuloCompetenciaCurto = $meses[(int) $inicioMesAtual->format('n')] . '/' . $inicioMesAtual->format('Y');
+
 $inicioProximoMes = $inicioMesAtual->modify('+1 month');
 $inicioHistorico = $inicioMesAtual->modify('-5 months');
 $inicioMesSql = $inicioMesAtual->format('Y-m-d');
@@ -51,14 +70,27 @@ foreach ($resumoStatement->fetchAll(PDO::FETCH_ASSOC) as $linha) {
 }
 $saldoMes = $entradasMes - $saidasMes;
 
-$saldoStatement = $pdo->query(
-    "SELECT COALESCE(SUM(CASE WHEN c.naturezaCategoria = 'Entrada'
-                              THEN l.valorLancamento ELSE -l.valorLancamento END), 0)
-     FROM tbLancamentoFinanceiro l
-     INNER JOIN tbCategoriaLancamentos c ON c.idCategoria = l.idCategoria
-     WHERE l.statusLancamento = 'Efetivado'"
-);
-$saldoAcumulado = (float) $saldoStatement->fetchColumn();
+if ($isMesAtual) {
+    $saldoStatement = $pdo->query(
+        "SELECT COALESCE(SUM(CASE WHEN c.naturezaCategoria = 'Entrada'
+                                  THEN l.valorLancamento ELSE -l.valorLancamento END), 0)
+         FROM tbLancamentoFinanceiro l
+         INNER JOIN tbCategoriaLancamentos c ON c.idCategoria = l.idCategoria
+         WHERE l.statusLancamento = 'Efetivado'"
+    );
+    $saldoAcumulado = (float) $saldoStatement->fetchColumn();
+} else {
+    $saldoStatement = $pdo->prepare(
+        "SELECT COALESCE(SUM(CASE WHEN c.naturezaCategoria = 'Entrada'
+                                  THEN l.valorLancamento ELSE -l.valorLancamento END), 0)
+         FROM tbLancamentoFinanceiro l
+         INNER JOIN tbCategoriaLancamentos c ON c.idCategoria = l.idCategoria
+         WHERE l.statusLancamento = 'Efetivado'
+           AND l.dataLancamento < :fim"
+    );
+    $saldoStatement->execute(['fim' => $proximoMesSql]);
+    $saldoAcumulado = (float) $saldoStatement->fetchColumn();
+}
 
 $historicoStatement = $pdo->prepare(
     'SELECT DATE_FORMAT(l.dataLancamento, \'%Y-%m\') AS competencia,
@@ -133,16 +165,34 @@ $progressoMeta = $metaMensal === null
     ? 0
     : ($metaMensal > 0 ? min(100, $saidasMes / $metaMensal * 100) : ($saidasMes > 0 ? 100 : 0));
 
-$recentesStatement = $pdo->query(
-    'SELECT l.idLancamento, l.dataLancamento, l.descricaoLancamento, l.valorLancamento,
-            l.statusLancamento, c.naturezaCategoria, c.nomeCategoria
-     FROM tbLancamentoFinanceiro l
-     INNER JOIN tbCategoriaLancamentos c ON c.idCategoria = l.idCategoria
-     ORDER BY l.dataLancamento DESC, l.idLancamento DESC
-     LIMIT 7'
-);
-$lancamentosRecentes = $recentesStatement->fetchAll(PDO::FETCH_ASSOC);
+if ($isMesAtual) {
+    $recentesStatement = $pdo->query(
+        'SELECT l.idLancamento, l.dataLancamento, l.descricaoLancamento, l.valorLancamento,
+                l.statusLancamento, c.naturezaCategoria, c.nomeCategoria
+         FROM tbLancamentoFinanceiro l
+         INNER JOIN tbCategoriaLancamentos c ON c.idCategoria = l.idCategoria
+         ORDER BY l.dataLancamento DESC, l.idLancamento DESC
+         LIMIT 7'
+    );
+    $lancamentosRecentes = $recentesStatement->fetchAll(PDO::FETCH_ASSOC);
+} else {
+    $recentesStatement = $pdo->prepare(
+        'SELECT l.idLancamento, l.dataLancamento, l.descricaoLancamento, l.valorLancamento,
+                l.statusLancamento, c.naturezaCategoria, c.nomeCategoria
+         FROM tbLancamentoFinanceiro l
+         INNER JOIN tbCategoriaLancamentos c ON c.idCategoria = l.idCategoria
+         WHERE l.dataLancamento >= :inicio AND l.dataLancamento < :fim
+         ORDER BY l.dataLancamento DESC, l.idLancamento DESC
+         LIMIT 7'
+    );
+    $recentesStatement->execute(['inicio' => $inicioMesSql, 'fim' => $proximoMesSql]);
+    $lancamentosRecentes = $recentesStatement->fetchAll(PDO::FETCH_ASSOC);
+}
 $baseUrl = appBaseUrl();
+$urlDashboardBase = $baseUrl . '/pages/financeiro/dashboard-financeiro.php';
+$urlMesAnterior = appTabUrl($urlDashboardBase . '?competencia=' . $competenciaAnterior);
+$urlMesProximo = appTabUrl($urlDashboardBase . '?competencia=' . $competenciaProxima);
+$urlMesAtual = appTabUrl($urlDashboardBase);
 $urlLancamentos = appTabUrl($baseUrl . '/pages/financeiro/movimentacoes/lancamentos-financeiros.php');
 $urlMetas = appTabUrl($baseUrl . '/pages/financeiro/movimentacoes/metas-orcamentarias.php');
 $urlExtrato = appTabUrl($baseUrl . '/pages/financeiro/relatorios/extrato-lancamentos.php');
@@ -180,7 +230,25 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                         <h1 class="text-2xl font-bold text-gray-800">Dashboard Financeiro</h1>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
-                        <span class="mr-1 text-sm text-slate-500"><?php echo appEscape($meses[(int) $inicioMesAtual->format('n')] . ' de ' . $inicioMesAtual->format('Y')); ?></span>
+                        <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white shadow-sm">
+                            <a href="<?php echo appEscape($urlMesAnterior); ?>" title="Mês anterior" aria-label="Mês anterior" class="inline-flex h-9 w-9 items-center justify-center rounded-l-lg text-slate-600 hover:bg-slate-50 hover:text-teal-700">
+                                <i class="ph ph-caret-left text-base" aria-hidden="true"></i>
+                            </a>
+                            <form method="get" action="<?php echo appEscape($urlDashboardBase); ?>" class="flex items-center border-x border-slate-200 px-2">
+                                <?php if (appCurrentTabToken() !== null): ?>
+                                    <input type="hidden" name="tabToken" value="<?php echo appEscape((string) appCurrentTabToken()); ?>">
+                                <?php endif; ?>
+                                <input type="month" name="competencia" value="<?php echo appEscape($competenciaSelecionada); ?>" aria-label="Selecionar mês e ano de competência" onchange="this.form.submit()" class="h-9 cursor-pointer border-0 bg-transparent text-sm font-medium text-slate-700 focus:outline-none">
+                            </form>
+                            <a href="<?php echo appEscape($urlMesProximo); ?>" title="Próximo mês" aria-label="Próximo mês" class="inline-flex h-9 w-9 items-center justify-center rounded-r-lg text-slate-600 hover:bg-slate-50 hover:text-teal-700">
+                                <i class="ph ph-caret-right text-base" aria-hidden="true"></i>
+                            </a>
+                        </div>
+                        <?php if (!$isMesAtual): ?>
+                            <a href="<?php echo appEscape($urlMesAtual); ?>" class="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-800 hover:bg-teal-100">
+                                <i class="ph ph-calendar-check text-base" aria-hidden="true"></i> Mês atual
+                            </a>
+                        <?php endif; ?>
                         <button type="button" data-values-toggle aria-pressed="false" class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
                             <i data-values-icon class="ph ph-eye text-lg" aria-hidden="true"></i>
                             <span data-values-label>Ocultar valores</span>
@@ -198,7 +266,7 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                             <div>
                                 <p class="text-sm font-medium text-teal-50">Saldo líquido acumulado</p>
                                 <p class="financial-value mt-3 text-2xl font-bold tabular-nums"><?php echo appEscape($formatarMoeda($saldoAcumulado)); ?></p>
-                                <p class="mt-2 text-xs text-teal-100">Entradas menos saídas efetivadas</p>
+                                <p class="mt-2 text-xs text-teal-100"><?php echo $isMesAtual ? 'Entradas menos saídas efetivadas' : appEscape('Acumulado até ' . $rotuloCompetenciaCurto); ?></p>
                             </div>
                             <span class="rounded-xl bg-white/15 p-3"><i class="ph ph-wallet text-2xl" aria-hidden="true"></i></span>
                         </div>
@@ -208,7 +276,7 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                             <div>
                                 <p class="text-sm font-medium text-slate-500">Entradas efetivadas</p>
                                 <p class="financial-value mt-3 text-2xl font-bold tabular-nums text-emerald-700"><?php echo appEscape($formatarMoeda($entradasMes)); ?></p>
-                                <p class="mt-2 text-xs text-slate-500">Neste mês</p>
+                                <p class="mt-2 text-xs text-slate-500"><?php echo $isMesAtual ? 'Neste mês' : appEscape('Em ' . $rotuloCompetenciaCurto); ?></p>
                             </div>
                             <span class="rounded-xl bg-emerald-50 p-3 text-emerald-700"><i class="ph ph-arrow-down-left text-2xl" aria-hidden="true"></i></span>
                         </div>
@@ -218,7 +286,7 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                             <div>
                                 <p class="text-sm font-medium text-slate-500">Saídas efetivadas</p>
                                 <p class="financial-value mt-3 text-2xl font-bold tabular-nums text-rose-700"><?php echo appEscape($formatarMoeda($saidasMes)); ?></p>
-                                <p class="mt-2 text-xs text-slate-500">Neste mês</p>
+                                <p class="mt-2 text-xs text-slate-500"><?php echo $isMesAtual ? 'Neste mês' : appEscape('Em ' . $rotuloCompetenciaCurto); ?></p>
                             </div>
                             <span class="rounded-xl bg-rose-50 p-3 text-rose-700"><i class="ph ph-arrow-up-right text-2xl" aria-hidden="true"></i></span>
                         </div>
@@ -228,7 +296,7 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                             <div>
                                 <p class="text-sm font-medium text-slate-500">Lançamentos pendentes</p>
                                 <p class="financial-value mt-3 text-2xl font-bold tabular-nums text-amber-700"><?php echo appEscape($formatarMoeda($entradasPendentesMes + $saidasPendentesMes)); ?></p>
-                                <p class="mt-2 text-xs text-slate-500"><?php echo $pendenciasTotal; ?> pendente(s) no mês</p>
+                                <p class="mt-2 text-xs text-slate-500"><?php echo $pendenciasTotal; ?> pendente(s) <?php echo $isMesAtual ? 'no mês' : appEscape('em ' . $rotuloCompetenciaCurto); ?></p>
                             </div>
                             <span class="rounded-xl bg-amber-50 p-3 text-amber-700"><i class="ph ph-hourglass-medium text-2xl" aria-hidden="true"></i></span>
                         </div>
@@ -240,7 +308,7 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                         <div class="flex flex-wrap items-start justify-between gap-3">
                             <div>
                                 <h2 class="font-bold text-slate-900">Entradas e saídas</h2>
-                                <p class="mt-1 text-xs text-slate-500">Movimentações efetivadas nos últimos seis meses</p>
+                                <p class="mt-1 text-xs text-slate-500"><?php echo $isMesAtual ? 'Movimentações efetivadas nos últimos seis meses' : appEscape('Movimentações efetivadas nos 6 meses encerrados em ' . $rotuloCompetenciaCurto); ?></p>
                             </div>
                             <div class="flex gap-4 text-xs text-slate-500">
                                 <span class="inline-flex items-center gap-1.5"><i class="h-2.5 w-2.5 rounded-full bg-teal-600"></i>Entradas</span>
@@ -263,7 +331,7 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                             <?php endforeach; ?>
                         </div>
                         <div class="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm">
-                            <span class="text-slate-500">Resultado líquido deste mês</span>
+                            <span class="text-slate-500"><?php echo $isMesAtual ? 'Resultado líquido deste mês' : appEscape('Resultado líquido de ' . $rotuloCompetenciaCurto); ?></span>
                             <strong class="financial-value tabular-nums <?php echo $saldoMes >= 0 ? 'text-teal-700' : 'text-rose-700'; ?>"><?php echo appEscape($formatarMoeda($saldoMes)); ?></strong>
                         </div>
                     </article>
@@ -271,7 +339,7 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                     <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                         <div>
                             <h2 class="font-bold text-slate-900">Saídas por categoria</h2>
-                            <p class="mt-1 text-xs text-slate-500">Despesas efetivadas neste mês</p>
+                            <p class="mt-1 text-xs text-slate-500"><?php echo $isMesAtual ? 'Despesas efetivadas neste mês' : appEscape('Despesas efetivadas em ' . $rotuloCompetenciaCurto); ?></p>
                         </div>
                         <?php if ($categorias): ?>
                             <div class="mt-5 flex items-center justify-center">
@@ -308,7 +376,7 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <h2 class="font-bold text-slate-900">Meta do mês</h2>
-                                <p class="mt-1 text-xs text-slate-500"><?php echo appEscape($meses[(int) $inicioMesAtual->format('n')]); ?></p>
+                                <p class="mt-1 text-xs text-slate-500"><?php echo appEscape($rotuloCompetencia); ?></p>
                             </div>
                             <a href="<?php echo appEscape($urlMetas); ?>" class="text-xs font-semibold text-teal-700 hover:text-teal-900">Gerenciar metas</a>
                         </div>
@@ -336,8 +404,8 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                     <article class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm xl:col-span-2">
                         <div class="flex items-center justify-between gap-3">
                             <div>
-                                <h2 class="font-bold text-slate-900">Lançamentos recentes</h2>
-                                <p class="mt-1 text-xs text-slate-500">Últimas movimentações registradas</p>
+                                <h2 class="font-bold text-slate-900"><?php echo $isMesAtual ? 'Lançamentos recentes' : appEscape('Lançamentos de ' . $rotuloCompetenciaCurto); ?></h2>
+                                <p class="mt-1 text-xs text-slate-500"><?php echo $isMesAtual ? 'Últimas movimentações registradas' : appEscape('Últimos lançamentos da competência selecionada'); ?></p>
                             </div>
                             <a href="<?php echo appEscape($urlLancamentos); ?>" class="text-xs font-semibold text-teal-700 hover:text-teal-900">Ver todos</a>
                         </div>
@@ -372,7 +440,7 @@ $urlResumoMetas = appTabUrl($baseUrl . '/pages/financeiro/relatorios/resumo-meta
                 <footer class="flex flex-wrap gap-x-5 gap-y-2 pb-2 text-xs text-slate-500">
                     <a href="<?php echo appEscape($urlExtrato); ?>" class="inline-flex items-center gap-1 hover:text-teal-700"><i class="ph ph-receipt" aria-hidden="true"></i> Extrato de lançamentos</a>
                     <a href="<?php echo appEscape($urlResumoMetas); ?>" class="inline-flex items-center gap-1 hover:text-teal-700"><i class="ph ph-chart-line-up" aria-hidden="true"></i> Resumo de metas</a>
-                    <span><?php echo $quantidadeMes; ?> lançamento(s) neste mês</span>
+                    <span><?php echo $quantidadeMes; ?> lançamento(s) <?php echo $isMesAtual ? 'neste mês' : appEscape('em ' . $rotuloCompetenciaCurto); ?></span>
                 </footer>
             </div>
         </main>

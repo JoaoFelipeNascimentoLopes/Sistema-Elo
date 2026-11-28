@@ -4,8 +4,8 @@ subtitle: Guia Completo de Funcionalidades, Preenchimento e Fluxo Operacional
 module: Módulo Financeiro
 system: Sistema Elo — Gerenciamento de Casas de Acolhimento
 author: João Felipe
-version: 1.0
-date: 27/11/2026
+version: 1.1
+date: 28/11/2026
 ---
 
 # 1. Visão Geral do Módulo Financeiro
@@ -68,11 +68,11 @@ Para que os lançamentos, recibos e relatórios funcionem corretamente desde o p
 
 **Caminho no menu:** `Financeiro → Dashboards → Dashboard Financeiro`
 
-O painel apresenta um retrato instantâneo da saúde financeira da instituição no mês vigente, considerando os lançamentos cadastrados.
+O painel apresenta um retrato instantâneo da saúde financeira da instituição no mês vigente ou em qualquer competência anterior/futura selecionada, considerando os lançamentos cadastrados.
 
 ## 3.1 Recursos da Barra Superior
 
-- **Indicador de competência:** exibe o mês e o ano de referência.
+- **Seletor de competência (`<` mês/ano `>` e botão *Mês atual*):** navegue rapidamente entre meses anteriores para consultar fechamentos passados ou escolha diretamente o mês e o ano desejados no seletor; ao visualizar outra competência, o botão **Mês atual** retorna imediatamente ao mês vigente.
 - **Ocultar valores / Mostrar valores:** botão de privacidade que mascara os valores monetários e oculta barras/gráficos na tela (útil ao compartilhar a tela em reuniões ou ambientes abertos).
 - **+ Novo lançamento:** atalho direto para a tela de Lançamentos Financeiros.
 
@@ -80,14 +80,14 @@ O painel apresenta um retrato instantâneo da saúde financeira da instituição
 
 | Bloco | O que mostra | Regra de cálculo |
 | --- | --- | --- |
-| **Saldo líquido acumulado** | Total disponível histórico | Soma de todas as `Entradas` menos `Saídas` com situação `Efetivado` |
-| **Entradas efetivadas** | Receitas confirmadas no mês atual | Lançamentos de `Entrada` com status `Efetivado` no mês vigente |
-| **Saídas efetivadas** | Despesas pagas no mês atual | Lançamentos de `Saída` com status `Efetivado` no mês vigente |
-| **Lançamentos pendentes** | Valor e quantidade em aberto no mês | Soma de entradas e saídas com status `Pendente` no mês vigente |
-| **Entradas e saídas (6 meses)** | Gráfico comparativo de barras | Evolução mensal de entradas × saídas efetivadas nos últimos 6 meses |
-| **Saídas por categoria** | Gráfico rosca (donut) + legenda | Distribuição percentual das despesas efetivadas por categoria no mês |
-| **Meta do mês** | Barra de progresso do orçamento | Compara as saídas efetivadas do mês contra a meta cadastrada |
-| **Lançamentos recentes** | Tabela rápida | Exibe os 7 últimos lançamentos registrados (por data e ID) |
+| **Saldo líquido acumulado** | Total disponível histórico (ou acumulado até o mês escolhido) | Soma de `Entradas` menos `Saídas` com situação `Efetivado` (total no mês atual ou até o fim da competência selecionada) |
+| **Entradas efetivadas** | Receitas confirmadas na competência | Lançamentos de `Entrada` com status `Efetivado` no mês selecionado |
+| **Saídas efetivadas** | Despesas pagas na competência | Lançamentos de `Saída` com status `Efetivado` no mês selecionado |
+| **Lançamentos pendentes** | Valor e quantidade em aberto na competência | Soma de entradas e saídas com status `Pendente` no mês selecionado |
+| **Entradas e saídas (6 meses)** | Gráfico comparativo de barras | Evolução mensal de entradas × saídas efetivadas nos 6 meses encerrados na competência |
+| **Saídas por categoria** | Gráfico rosca (donut) + legenda | Distribuição percentual das despesas efetivadas por categoria no mês selecionado |
+| **Meta do mês** | Barra de progresso do orçamento | Compara as saídas efetivadas do mês selecionado contra a meta cadastrada |
+| **Lançamentos recentes** | Tabela rápida | Exibe os 7 últimos lançamentos registrados (ou os 7 últimos da competência consultada) |
 
 ---
 
@@ -209,7 +209,8 @@ Tela principal da rotina financeira. Permite lançar todas as entradas e saídas
 | **2. Classificação e vínculos** | **Empresa ou pessoa física** | Não | Após escolher a categoria: se for **Saída**, busca em *Fornecedores/Prestadores*; se for **Entrada**, busca em *Doadores/Contribuintes* |
 | **2. Classificação e vínculos** | **Fonte de recurso** | Não | Combobox pesquisável com fontes ativas |
 | **2. Classificação e vínculos** | **Forma de pagamento** | Não | Combobox pesquisável com formas de pagamento ativas |
-| **3. Observações** | **Observações** | Não | Até 255 caracteres para anotações internas |
+| **3. Comprovante e observações** | **Comprovante / Nota Fiscal** | Não | Anexo opcional em **PDF, JPG, PNG ou WebP (até 10 MB)** armazenado em diretório privado, com visualização em modal e download seguro |
+| **3. Comprovante e observações** | **Observações** | Não | Até 255 caracteres para anotações internas |
 
 ### Como usar os campos com autocomplete (Combobox Pesquisável)
 
@@ -222,10 +223,11 @@ Nos campos **Categoria**, **Empresa/Pessoa Física**, **Fonte de recurso** e **F
 
 ### Pesquisa e gestão de lançamentos
 
-Na aba **Pesquisa**, você visualiza todos os lançamentos com barra de busca instantânea, paginação configurável (**10 / 25 / 50 / 100**) e um aviso no topo informando quantos lançamentos estão elegíveis para emissão de recibo. Na coluna **Ações** é possível:
-- **Emitir recibo:** disponível para doações elegíveis.
-- **Editar (lápis):** alterar valores, corrigir vínculos ou mudar a situação de `Pendente` para `Efetivado`.
-- **Excluir (lixeira):** remover o lançamento após confirmação.
+Na aba **Pesquisa**, você visualiza todos os lançamentos com barra de busca instantânea, paginação configurável (**10 / 25 / 50 / 100**), coluna **Comprovante** (botão **Ver** para abrir o PDF ou imagem da nota fiscal/recibo em modal na mesma aba) e um aviso no topo informando quantos lançamentos estão elegíveis para emissão de recibo. Na coluna **Ações** é possível:
+- **Efetivar (1 clique):** exibido nos lançamentos com situação `Pendente` para dar baixa imediata sem precisar abrir o formulário de edição (registrando automaticamente no Log de Auditoria).
+- **Emitir recibo:** disponível para doações efetivadas com doador vinculado.
+- **Editar (lápis):** alterar valores, anexar/substituir/remover comprovante, corrigir vínculos ou mudar a situação.
+- **Excluir (lixeira):** remover o lançamento (e eventual comprovante anexado) após confirmação.
 
 ---
 

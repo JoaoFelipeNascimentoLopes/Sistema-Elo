@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../../auth/access.php';
+require_once __DIR__ . '/../../../auth/lancamento-comprovantes.php';
 $usuarioAtual = appRequirePage('financeiro.movimentacoes/lancamentos-financeiros');
 $pdo = appPdo();
 $erro = '';
@@ -177,6 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    $novoComprovante = null;
     try {
         if ($acao === 'salvar') {
             $idInput = $_POST['idLancamento'] ?? 0;
@@ -194,6 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $idFormaPagamento = $formaInput === '' ? null : (is_scalar($formaInput) ? filter_var($formaInput, FILTER_VALIDATE_INT) : false);
             $pessoaInput = $valorDigitado($_POST['pessoaRelacionada'] ?? '');
             $observacoes = trim($valorDigitado($_POST['observacoes'] ?? ''));
+            $removerComprovante = ($_POST['removerComprovante'] ?? '') === '1';
             $original = null;
 
             if ($idLancamento === false || $idLancamento < 0
@@ -212,6 +215,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $existing = $pdo->prepare(
                     'SELECT l.idCategoria, l.idFonte, l.idFormaPagamento,
                             l.idFornecedorPrestador, l.idDoadorContribuinte, l.statusLancamento,
+                            l.caminhoComprovante, l.nomeOriginalComprovante,
                             c.naturezaCategoria
                      FROM tbLancamentoFinanceiro l
                      INNER JOIN tbCategoriaLancamentos c ON c.idCategoria = l.idCategoria
@@ -285,6 +289,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            $arquivoUpload = $_FILES['comprovante'] ?? null;
+            if (is_array($arquivoUpload) && ($arquivoUpload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                $novoComprovante = appValidarUploadComprovanteFinanceiro($arquivoUpload);
+            }
+
+            $caminhoComprovante = $original['caminhoComprovante'] ?? null;
+            $nomeOriginalComprovante = $original['nomeOriginalComprovante'] ?? null;
+            $comprovanteAnteriorRemover = null;
+            if ($novoComprovante !== null) {
+                $comprovanteAnteriorRemover = is_string($caminhoComprovante) ? $caminhoComprovante : null;
+                $caminhoComprovante = $novoComprovante['caminho'];
+                $nomeOriginalComprovante = $novoComprovante['nomeOriginal'];
+            } elseif ($removerComprovante && $idLancamento > 0) {
+                $comprovanteAnteriorRemover = is_string($caminhoComprovante) ? $caminhoComprovante : null;
+                $caminhoComprovante = null;
+                $nomeOriginalComprovante = null;
+            }
+
             $values = [
                 'dataLancamento' => $data,
                 'descricaoLancamento' => $descricao,
@@ -296,6 +318,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'idFornecedorPrestador' => $idFornecedorPrestador,
                 'idDoadorContribuinte' => $idDoadorContribuinte,
                 'observacoes' => $observacoes !== '' ? $observacoes : null,
+                'caminhoComprovante' => $caminhoComprovante,
+                'nomeOriginalComprovante' => $nomeOriginalComprovante,
             ];
             if ($idLancamento > 0) {
                 $emitirReciboAutomaticamente = $natureza === 'Entrada'
@@ -312,13 +336,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                          idFormaPagamento = :idFormaPagamento,
                          idFornecedorPrestador = :idFornecedorPrestador,
                          idDoadorContribuinte = :idDoadorContribuinte,
-                         observacoes = :observacoes, idUsuarioAlteracao = :idUsuarioAlteracao
+                         observacoes = :observacoes,
+                         caminhoComprovante = :caminhoComprovante,
+                         nomeOriginalComprovante = :nomeOriginalComprovante,
+                         idUsuarioAlteracao = :idUsuarioAlteracao
                      WHERE idLancamento = :idLancamento'
                 );
                 $statement->execute($values + [
                     'idUsuarioAlteracao' => (int) $usuarioAtual['idUsuario'],
                     'idLancamento' => $idLancamento,
                 ]);
+                if ($comprovanteAnteriorRemover !== null) {
+                    try {
+                        appRemoverComprovanteFinanceiro($comprovanteAnteriorRemover);
+                    } catch (Throwable $fileErr) {
+                        error_log($fileErr->getMessage());
+                    }
+                }
                 if ($emitirReciboAutomaticamente) {
                     header('Location: ' . appTabUrl('recibo-doacao.php?id=' . $idLancamento));
                     exit;
@@ -331,11 +365,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'INSERT INTO tbLancamentoFinanceiro
                     (dataLancamento, descricaoLancamento, valorLancamento, statusLancamento,
                      idCategoria, idFonte, idFormaPagamento, idFornecedorPrestador,
-                     idDoadorContribuinte, observacoes, idUsuarioCriacao)
+                     idDoadorContribuinte, observacoes, caminhoComprovante, nomeOriginalComprovante,
+                     idUsuarioCriacao)
                  VALUES
                     (:dataLancamento, :descricaoLancamento, :valorLancamento, :statusLancamento,
                      :idCategoria, :idFonte, :idFormaPagamento, :idFornecedorPrestador,
-                     :idDoadorContribuinte, :observacoes, :idUsuarioCriacao)'
+                     :idDoadorContribuinte, :observacoes, :caminhoComprovante, :nomeOriginalComprovante,
+                     :idUsuarioCriacao)'
             );
             $statement->execute($values + ['idUsuarioCriacao' => (int) $usuarioAtual['idUsuario']]);
             $idNovoLancamento = (int) $pdo->lastInsertId();
@@ -347,23 +383,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
+        if ($acao === 'efetivar') {
+            $idInput = $_POST['idLancamento'] ?? 0;
+            $idLancamento = is_scalar($idInput) ? filter_var($idInput, FILTER_VALIDATE_INT) : false;
+            if (!$idLancamento || $idLancamento < 1) {
+                throw new InvalidArgumentException('Lançamento financeiro inválido.');
+            }
+            $busca = $pdo->prepare(
+                'SELECT idLancamento, descricaoLancamento, statusLancamento, valorLancamento
+                 FROM tbLancamentoFinanceiro WHERE idLancamento = :id LIMIT 1'
+            );
+            $busca->execute(['id' => $idLancamento]);
+            $registro = $busca->fetch(PDO::FETCH_ASSOC);
+            if (!$registro) {
+                throw new InvalidArgumentException('Lançamento financeiro não encontrado.');
+            }
+            if ($registro['statusLancamento'] !== 'Efetivado') {
+                $upd = $pdo->prepare(
+                    'UPDATE tbLancamentoFinanceiro
+                     SET statusLancamento = \'Efetivado\', idUsuarioAlteracao = :idUsuario
+                     WHERE idLancamento = :id'
+                );
+                $upd->execute([
+                    'idUsuario' => (int) $usuarioAtual['idUsuario'],
+                    'id' => $idLancamento,
+                ]);
+                appRegistrarAuditoria(
+                    'financeiro',
+                    'editar',
+                    'Lançamento efetivado (baixa rápida): ' . (string) $registro['descricaoLancamento'] . '.',
+                    'Lançamento Financeiro',
+                    $idLancamento,
+                    [
+                        'statusAnterior' => (string) $registro['statusLancamento'],
+                        'statusNovo' => 'Efetivado',
+                        'valor' => (float) $registro['valorLancamento'],
+                    ],
+                    $usuarioAtual
+                );
+            }
+            header('Location: ' . appTabUrl('lancamentos-financeiros.php?resultado=efetivado'));
+            exit;
+        }
+
         if ($acao === 'excluir') {
             $idInput = $_POST['idLancamento'] ?? 0;
             $idLancamento = is_scalar($idInput) ? filter_var($idInput, FILTER_VALIDATE_INT) : false;
             if (!$idLancamento || $idLancamento < 1) {
                 throw new InvalidArgumentException('Lançamento financeiro inválido.');
             }
+            $buscaArq = $pdo->prepare('SELECT caminhoComprovante FROM tbLancamentoFinanceiro WHERE idLancamento = :id LIMIT 1');
+            $buscaArq->execute(['id' => $idLancamento]);
+            $caminhoComprovanteExcluir = $buscaArq->fetchColumn();
             $statement = $pdo->prepare('DELETE FROM tbLancamentoFinanceiro WHERE idLancamento = :id');
             $statement->execute(['id' => $idLancamento]);
             if ($statement->rowCount() === 0) {
                 throw new InvalidArgumentException('Lançamento financeiro não encontrado.');
+            }
+            if (is_string($caminhoComprovanteExcluir) && $caminhoComprovanteExcluir !== '') {
+                try {
+                    appRemoverComprovanteFinanceiro($caminhoComprovanteExcluir);
+                } catch (Throwable $fileErr) {
+                    error_log($fileErr->getMessage());
+                }
             }
             header('Location: ' . appTabUrl('lancamentos-financeiros.php?resultado=excluido'));
             exit;
         }
 
         throw new InvalidArgumentException('Ação inválida.');
-    } catch (InvalidArgumentException $exception) {
+    } catch (InvalidArgumentException|RuntimeException $exception) {
+        if ($novoComprovante !== null) {
+            try {
+                appRemoverComprovanteFinanceiro($novoComprovante['caminho']);
+            } catch (Throwable) {
+            }
+        }
         $erro = $exception->getMessage();
         if ($acao === 'salvar') {
             $submittedId = $_POST['idLancamento'] ?? 0;
@@ -382,6 +477,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
         }
     } catch (PDOException $exception) {
+        if ($novoComprovante !== null) {
+            try {
+                appRemoverComprovanteFinanceiro($novoComprovante['caminho']);
+            } catch (Throwable) {
+            }
+        }
         error_log('Falha ao salvar lançamento financeiro: ' . $exception->getMessage());
         $errorCode = (int) ($exception->errorInfo[1] ?? 0);
         $erro = $acao === 'excluir' && $errorCode === 1451
@@ -413,6 +514,7 @@ if ($lancamentoEdicao === null && $idEdicao) {
         'SELECT l.idLancamento, l.dataLancamento, l.descricaoLancamento, l.valorLancamento,
                 l.statusLancamento, l.idCategoria, l.idFonte, l.idFormaPagamento,
                 l.idFornecedorPrestador, l.idDoadorContribuinte, l.observacoes,
+                l.caminhoComprovante, l.nomeOriginalComprovante,
                 l.criadoEm, l.atualizadoEm,
                 criador.idUsuario AS criadoPorId, criador.nomeCompleto AS criadoPor,
                 alterador.idUsuario AS alteradoPorId, alterador.nomeCompleto AS alteradoPor
@@ -497,7 +599,8 @@ if (preg_match('/^(fornecedor|doador):([1-9]\d*)$/', $pessoaRelacionada, $person
 }
 $lancamentos = $pdo->query(
     'SELECT l.idLancamento, l.idDoadorContribuinte, l.dataLancamento, l.descricaoLancamento, l.valorLancamento,
-            l.statusLancamento, c.nomeCategoria, c.naturezaCategoria, f.nomeFonte,
+            l.statusLancamento, l.caminhoComprovante, l.nomeOriginalComprovante,
+            c.nomeCategoria, c.naturezaCategoria, f.nomeFonte,
             p.nomeFormaPagamento,
             COALESCE(fp.nomeRazaoSocial, dc.nomeRazaoSocial) AS pessoaRelacionada
      FROM tbLancamentoFinanceiro l
@@ -517,8 +620,10 @@ $totalRecibosDisponiveis = count(array_filter(
 $resultado = [
     'criado' => 'Lançamento financeiro cadastrado.',
     'atualizado' => 'Lançamento financeiro atualizado.',
+    'efetivado' => 'Lançamento efetivado com sucesso.',
     'excluido' => 'Lançamento financeiro excluído.',
 ][(string) ($_GET['resultado'] ?? '')] ?? '';
+$baseUrl = appBaseUrl();
 $abaInicial = ($lancamentoEdicao || ($erro !== '' && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'salvar'))
     ? 'manutencao'
     : 'pesquisa';
@@ -555,7 +660,7 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
             <?php include __DIR__ . '/../../../components/tabs-pesquisa-manutencao.php'; ?>
             <section id="painel-manutencao" role="tabpanel" aria-labelledby="tab-manutencao" class="mb-8 rounded-lg border border-gray-200 bg-white p-5 shadow-sm" <?php echo $abaInicial === 'manutencao' ? '' : 'hidden'; ?>>
                 <h2 class="mb-4 text-lg font-semibold"><?php echo !empty($lancamentoEdicao['idLancamento']) ? 'Alterar lançamento' : 'Novo lançamento'; ?></h2>
-                <form method="post" data-confirm="Confirma gravar este lançamento?" data-finance-launch-form class="grid gap-5">
+                <form method="post" enctype="multipart/form-data" data-confirm="Confirma gravar este lançamento?" data-finance-launch-form class="grid gap-5">
                     <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
                     <input type="hidden" name="acao" value="salvar">
                     <input type="hidden" name="idLancamento" value="<?php echo (int) ($lancamentoEdicao['idLancamento'] ?? 0); ?>">
@@ -644,7 +749,38 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                     </fieldset>
 
                     <fieldset class="grid gap-4 rounded-lg border border-gray-200 p-4 md:grid-cols-2">
-                        <legend class="px-2 text-sm font-semibold text-gray-700">3. Observações e controle</legend>
+                        <legend class="px-2 text-sm font-semibold text-gray-700">3. Comprovante, observações e controle</legend>
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium text-gray-700">Comprovante / Nota Fiscal (opcional — PDF, JPG, PNG ou WebP até 10 MB)
+                                <input type="file" name="comprovante" accept=".pdf,image/jpeg,image/png,image/webp" class="mt-1 block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 file:mr-3 file:rounded file:border-0 file:bg-elo-teal/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-elo-teal hover:file:bg-elo-teal/20">
+                            </label>
+                            <?php if (!empty($lancamentoEdicao['idLancamento']) && !empty($lancamentoEdicao['caminhoComprovante'])): ?>
+                                <?php
+                                $editAnexoUrl = appTabUrl($baseUrl . '/auth/lancamento-comprovante.php?id=' . (int) $lancamentoEdicao['idLancamento']);
+                                $editAnexoDownloadUrl = appTabUrl($baseUrl . '/auth/lancamento-comprovante.php?id=' . (int) $lancamentoEdicao['idLancamento'] . '&download=1');
+                                $editAnexoNome = (string) ($lancamentoEdicao['nomeOriginalComprovante'] ?? 'comprovante');
+                                $editAnexoExt = strtolower(pathinfo((string) $lancamentoEdicao['caminhoComprovante'], PATHINFO_EXTENSION));
+                                ?>
+                                <div class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-teal-200 bg-teal-50/70 px-3 py-2 text-xs text-teal-900">
+                                    <span class="inline-flex min-w-0 items-center gap-1.5 font-medium">
+                                        <i class="ph ph-paperclip shrink-0 text-base text-elo-teal" aria-hidden="true"></i>
+                                        <span class="truncate">Anexo atual: <?php echo appEscape($editAnexoNome); ?></span>
+                                    </span>
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <button type="button" data-open-comprovante data-url="<?php echo appEscape($editAnexoUrl); ?>" data-download="<?php echo appEscape($editAnexoDownloadUrl); ?>" data-nome="<?php echo appEscape($editAnexoNome); ?>" data-ext="<?php echo appEscape($editAnexoExt); ?>" class="inline-flex items-center gap-1 rounded border border-elo-teal/30 bg-white px-2.5 py-1 font-medium text-elo-teal hover:bg-elo-teal/10">
+                                            <i class="ph ph-eye" aria-hidden="true"></i> Visualizar
+                                        </button>
+                                        <a href="<?php echo appEscape($editAnexoDownloadUrl); ?>" class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2.5 py-1 font-medium text-gray-700 hover:bg-gray-50">
+                                            <i class="ph ph-download-simple" aria-hidden="true"></i> Baixar
+                                        </a>
+                                        <label class="inline-flex cursor-pointer items-center gap-1.5 rounded border border-red-200 bg-white px-2.5 py-1 font-medium text-red-700 hover:bg-red-50">
+                                            <input type="checkbox" name="removerComprovante" value="1" class="rounded border-red-300 text-red-600 focus:ring-red-500">
+                                            Remover atual
+                                        </label>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                         <label class="text-sm font-medium text-gray-700 md:col-span-2">Observações
                             <textarea name="observacoes" maxlength="255" rows="2" class="mt-1 w-full rounded border border-gray-300 px-3 py-2"><?php echo appEscape((string) ($lancamentoEdicao['observacoes'] ?? '')); ?></textarea>
                         </label>
@@ -678,10 +814,17 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                     <?php endif; ?>
                 </p>
                 <div class="overflow-x-auto">
-                    <table class="w-full min-w-[1050px] text-left text-sm">
-                        <thead class="border-b bg-gray-50 text-gray-600"><tr><th class="p-3">Data</th><th class="p-3">Descrição</th><th class="p-3">Categoria</th><th class="p-3">Empresa/Pessoa Física</th><th class="p-3">Fonte</th><th class="p-3">Forma</th><th class="p-3">Situação</th><th class="p-3 text-right">Valor</th><th class="p-3">Ações</th></tr></thead>
+                    <table class="w-full min-w-[1180px] text-left text-sm">
+                        <thead class="border-b bg-gray-50 text-gray-600"><tr><th class="p-3">Data</th><th class="p-3">Descrição</th><th class="p-3">Categoria</th><th class="p-3">Empresa/Pessoa Física</th><th class="p-3">Fonte</th><th class="p-3">Forma</th><th class="p-3">Situação</th><th class="p-3">Comprovante</th><th class="p-3 text-right">Valor</th><th class="p-3">Ações</th></tr></thead>
                         <tbody id="listaLancamentos">
                         <?php foreach ($lancamentos as $lancamento): ?>
+                            <?php
+                            $temComprovante = !empty($lancamento['caminhoComprovante']);
+                            $comprovanteUrl = $temComprovante ? appTabUrl($baseUrl . '/auth/lancamento-comprovante.php?id=' . (int) $lancamento['idLancamento']) : '';
+                            $comprovanteDownloadUrl = $temComprovante ? appTabUrl($baseUrl . '/auth/lancamento-comprovante.php?id=' . (int) $lancamento['idLancamento'] . '&download=1') : '';
+                            $comprovanteNome = (string) ($lancamento['nomeOriginalComprovante'] ?? ('comprovante-' . (int) $lancamento['idLancamento']));
+                            $comprovanteExt = $temComprovante ? strtolower(pathinfo((string) $lancamento['caminhoComprovante'], PATHINFO_EXTENSION)) : '';
+                            ?>
                             <tr class="border-b hover:bg-gray-50">
                                 <td class="whitespace-nowrap p-3"><?php echo appEscape(date('d/m/Y', strtotime($lancamento['dataLancamento']))); ?></td>
                                 <td class="p-3 font-medium text-gray-800"><?php echo appEscape($lancamento['descricaoLancamento']); ?></td>
@@ -690,8 +833,27 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
                                 <td class="p-3"><?php echo appEscape((string) ($lancamento['nomeFonte'] ?? '')); ?></td>
                                 <td class="p-3"><?php echo appEscape((string) ($lancamento['nomeFormaPagamento'] ?? '')); ?></td>
                                 <td class="p-3"><span class="<?php echo $lancamento['statusLancamento'] === 'Efetivado' ? 'text-green-700' : 'text-amber-700'; ?>"><?php echo appEscape($lancamento['statusLancamento']); ?></span></td>
+                                <td class="whitespace-nowrap p-3">
+                                    <?php if ($temComprovante): ?>
+                                        <button type="button" data-open-comprovante data-url="<?php echo appEscape($comprovanteUrl); ?>" data-download="<?php echo appEscape($comprovanteDownloadUrl); ?>" data-nome="<?php echo appEscape($comprovanteNome); ?>" data-ext="<?php echo appEscape($comprovanteExt); ?>" class="inline-flex items-center gap-1 rounded border border-teal-200 bg-teal-50 px-2 py-1 text-xs font-medium text-teal-800 hover:bg-teal-100" title="Visualizar comprovante / NF">
+                                            <i class="ph ph-paperclip text-sm" aria-hidden="true"></i> Ver
+                                        </button>
+                                    <?php else: ?>
+                                        <span class="text-xs text-gray-400">—</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="whitespace-nowrap p-3 text-right"><?php echo appEscape($formatarMoeda($lancamento['valorLancamento'])); ?></td>
-                                <td class="whitespace-nowrap p-3"><div class="flex items-center gap-3">
+                                <td class="whitespace-nowrap p-3"><div class="flex items-center gap-2">
+                                    <?php if ($lancamento['statusLancamento'] === 'Pendente'): ?>
+                                        <form method="post" data-confirm="Confirmar baixa (efetivar) este lançamento financeiro?">
+                                            <input type="hidden" name="csrfToken" value="<?php echo appEscape(appCsrfToken()); ?>">
+                                            <input type="hidden" name="acao" value="efetivar">
+                                            <input type="hidden" name="idLancamento" value="<?php echo (int) $lancamento['idLancamento']; ?>">
+                                            <button type="submit" aria-label="Efetivar lançamento <?php echo appEscape($lancamento['descricaoLancamento']); ?>" class="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100" title="Dar baixa (efetivar) em 1 clique">
+                                                <i class="ph ph-check-circle text-base" aria-hidden="true"></i> Efetivar
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
                                     <?php if ($lancamento['naturezaCategoria'] === 'Entrada' && $lancamento['statusLancamento'] === 'Efetivado' && !empty($lancamento['idDoadorContribuinte'])): ?>
                                         <a href="<?php echo appEscape(appTabUrl('recibo-doacao.php?id=' . (int) $lancamento['idLancamento'])); ?>" aria-label="Emitir recibo de doação do lançamento <?php echo (int) $lancamento['idLancamento']; ?>" class="inline-flex items-center gap-1.5 rounded border border-emerald-200 px-2.5 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-50"><i class="ph ph-receipt text-base" aria-hidden="true"></i>Emitir recibo</a>
                                     <?php endif; ?>
@@ -707,8 +869,73 @@ $formatarMoeda = static fn (mixed $value): string => 'R$ ' . number_format((floa
             </section>
         </main>
     </div>
+    <div id="modalVisualizarComprovante" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 p-4">
+        <div class="flex h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div class="flex items-center justify-between gap-3 border-b border-gray-200 px-5 py-3">
+                <div class="min-w-0">
+                    <h3 id="modalComprovanteTitulo" class="truncate text-base font-semibold text-gray-800">Comprovante / Nota Fiscal</h3>
+                </div>
+                <div class="flex shrink-0 items-center gap-2">
+                    <a id="modalComprovanteDownload" href="#" class="inline-flex items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                        <i class="ph ph-download-simple text-sm" aria-hidden="true"></i> Baixar
+                    </a>
+                    <button type="button" id="modalComprovanteFechar" class="inline-flex h-8 w-8 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800" aria-label="Fechar visualizador">
+                        <i class="ph ph-x text-xl" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="modalComprovanteCorpo" class="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-gray-100 p-3"></div>
+        </div>
+    </div>
     <?php $toastSuccess = $resultado; $toastError = $erro; include __DIR__ . '/../../../components/toast.php'; ?>
     <script src="<?php echo appEscape(appBaseUrl() . '/assets/js/app.js?v=' . appJavascriptVersion()); ?>"></script>
+    <script>
+        (() => {
+            const modal = document.getElementById('modalVisualizarComprovante');
+            const titulo = document.getElementById('modalComprovanteTitulo');
+            const download = document.getElementById('modalComprovanteDownload');
+            const corpo = document.getElementById('modalComprovanteCorpo');
+            const fechar = document.getElementById('modalComprovanteFechar');
+            if (modal && corpo && fechar) {
+                const closeModal = () => {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                    corpo.replaceChildren();
+                };
+                fechar.addEventListener('click', closeModal);
+                modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal();
+                });
+                document.addEventListener('click', (e) => {
+                    const btn = e.target.closest('[data-open-comprovante]');
+                    if (!btn) return;
+                    const url = btn.dataset.url || '';
+                    const dl = btn.dataset.download || url;
+                    const nome = btn.dataset.nome || 'Comprovante';
+                    const ext = (btn.dataset.ext || '').toLowerCase();
+                    titulo.textContent = nome;
+                    download.href = dl;
+                    corpo.replaceChildren();
+                    if (ext === 'pdf') {
+                        const iframe = document.createElement('iframe');
+                        iframe.src = url;
+                        iframe.title = nome;
+                        iframe.className = 'h-full w-full rounded border border-gray-200 bg-white';
+                        corpo.append(iframe);
+                    } else {
+                        const img = document.createElement('img');
+                        img.src = url;
+                        img.alt = nome;
+                        img.className = 'max-h-full max-w-full rounded object-contain shadow';
+                        corpo.append(img);
+                    }
+                    modal.classList.remove('hidden');
+                    modal.classList.add('flex');
+                });
+            }
+        })();
+    </script>
     <script>
         (() => {
             const form = document.querySelector('[data-finance-launch-form]');

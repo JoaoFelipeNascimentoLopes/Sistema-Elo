@@ -189,6 +189,8 @@ CREATE TABLE IF NOT EXISTS tbLancamentoFinanceiro (
     idFornecedorPrestador INT UNSIGNED NULL,
     idDoadorContribuinte INT UNSIGNED NULL,
     observacoes VARCHAR(255) NULL,
+    caminhoComprovante VARCHAR(255) NULL,
+    nomeOriginalComprovante VARCHAR(255) NULL,
     idUsuarioCriacao INT UNSIGNED NOT NULL,
     idUsuarioAlteracao INT UNSIGNED NULL,
     criadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

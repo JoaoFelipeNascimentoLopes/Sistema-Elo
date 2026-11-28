@@ -4,8 +4,8 @@ subtitle: Arquitetura, Banco de Dados, CRUDs, Funções, Endpoints AJAX e Fluxos
 module: Módulo Financeiro · Guia do Desenvolvedor
 system: Sistema Elo — Gerenciamento de Casas de Acolhimento
 author: João Felipe
-version: 1.0
-date: 27/11/2026
+version: 1.1
+date: 28/11/2026
 toc_heading: Conteúdo da Documentação Técnica
 ---
 
@@ -40,7 +40,8 @@ O módulo segue uma arquitetura **PHP server-rendered monolítica com PDO (MySQL
 
 | Arquivo Compartilhado | Função no Módulo Financeiro |
 | --- | --- |
-| `auth/access.php` | Sessão por aba (`tabToken`), RBAC, CSRF, PDO (`appPdo()`), escape XSS e catálogo de telas |
+| `auth/access.php` | Sessão por aba (`tabToken`), RBAC, CSRF, PDO (`appPdo()`), auditoria global automática, escape XSS e catálogo de telas |
+| `auth/lancamento-comprovantes.php` e `auth/lancamento-comprovante.php` | Upload validado via `finfo` (PDF/JPG/PNG/WebP até 10 MB) em `uploads/comprovantes-financeiros/` e streaming autenticado (`inline` ou `attachment`) |
 | `db/schema.sql` | Definição oficial das 7 tabelas financeiras + `tbInformacoesInstituicao` + `tbUsuario` |
 | `components/financeiro/navbar-financeiro.php` | Barra superior, modal de troca de módulos (`#modulosModal`), contador de sessão e logout |
 | `components/financeiro/sidebar-financeiro.php` | Define `$sidebarModuleKey = 'financeiro'` e delega para `components/module-sidebar.php` |
@@ -125,7 +126,7 @@ O Módulo Financeiro opera sobre **7 tabelas próprias** (engine `InnoDB`, chars
 | `tbFormaPagamento` | `idFormaPagamento` | `nomeFormaPagamento` (100), `descricaoFormaPagamento` (255), `statusFormaPagamento` | `UNIQUE (nomeFormaPagamento)` |
 | `tbFornecedorPrestador` | `idFornecedorPrestador` | `tipoPessoa`, `documento` (14), `nomeRazaoSocial` (150), `nomeFantasia` (150), `nomeContato` (150), `email` (190), `telefone` (20), `observacoes` (255), `statusFornecedor` | `ENUM('fisica','juridica')`; `UNIQUE (documento)` |
 | `tbDoadorContribuinte` | `idDoadorContribuinte` | Mesmos campos de identificação (sem `nomeContato`) + `cep` (8), `logradouro` (150), `numero` (20), `complemento` (100), `bairro` (100), `cidade` (100), `uf` (`CHAR(2)`), `observacoes`, `statusDoador` | `ENUM('fisica','juridica')`; `UNIQUE (documento)` |
-| `tbLancamentoFinanceiro` | `idLancamento` | `dataLancamento` (`DATE`), `descricaoLancamento` (255), `valorLancamento` (`DECIMAL(14,2) UNSIGNED`), `statusLancamento`, 5 FKs (`idCategoria`, `idFonte`, `idFormaPagamento`, `idFornecedorPrestador`, `idDoadorContribuinte`), `observacoes` (255) | `CHECK (valorLancamento > 0)`; `ENUM('Pendente','Efetivado') DEFAULT 'Pendente'` |
+| `tbLancamentoFinanceiro` | `idLancamento` | `dataLancamento` (`DATE`), `descricaoLancamento` (255), `valorLancamento` (`DECIMAL(14,2) UNSIGNED`), `statusLancamento`, 5 FKs (`idCategoria`, `idFonte`, `idFormaPagamento`, `idFornecedorPrestador`, `idDoadorContribuinte`), `observacoes` (255), `caminhoComprovante` (255), `nomeOriginalComprovante` (255) | `CHECK (valorLancamento > 0)`; `ENUM('Pendente','Efetivado') DEFAULT 'Pendente'` |
 | `tbMetaOrcamentaria` | `idMetaOrcamentaria` | `ano` (`SMALLINT UNSIGNED`), `mes` (`TINYINT UNSIGNED`), `valorOrcado` (`DECIMAL(14,2) UNSIGNED`) | `CHECK (mes BETWEEN 1 AND 12)`; `CHECK (valorOrcado >= 0)`; `UNIQUE (ano, mes)` |
 
 ### Índices de Performance e Política de Integridade
@@ -193,18 +194,18 @@ O arquivo `assets/js/app.js` inicializa automaticamente os recursos abaixo assim
 
 # 4. Dashboard Financeiro
 
-O arquivo `pages/financeiro/dashboard-financeiro.php` (`appRequirePage('financeiro.dashboard-financeiro')`) é somente leitura e executa **6 consultas SQL independentes** para compor os cartões de KPIs, o comparativo semestral, o gráfico de rosca por categoria, o termômetro de meta orçamentária e o feed de movimentações recentes.
+O arquivo `pages/financeiro/dashboard-financeiro.php` (`appRequirePage('financeiro.dashboard-financeiro')`) é somente leitura, aceita o parâmetro opcional `GET ?competencia=YYYY-MM` (validado entre `2000-01` e `2100-12`, com padrão no mês vigente, navegação `<` / `>` e atalho **Mês atual** preservando `tabToken`) e executa **6 consultas SQL independentes** para compor os cartões de KPIs, o comparativo semestral, o gráfico de rosca por categoria, o termômetro de meta orçamentária e o feed de movimentações recentes.
 
 ## 4.1 As 6 Consultas SQL do Dashboard
 
 | # | Objetivo | Tabelas Envolvidas | Lógica SQL Principal |
 | --- | --- | --- | --- |
-| 1 | Resumo do mês atual (`$resumoMes`) | `tbLancamentoFinanceiro` + `tbCategoriaLancamentos` | `GROUP BY c.naturezaCategoria, l.statusLancamento` filtrando `l.dataLancamento >= :inicioMes AND l.dataLancamento < :proximoMes`. Preenche entradas efetivadas/pendentes e saídas efetivadas/pendentes. |
-| 2 | Saldo acumulado efetivado (`$saldoAcumulado`) | `tbLancamentoFinanceiro` + `tbCategoriaLancamentos` | `SUM(CASE WHEN c.naturezaCategoria = 'Entrada' THEN l.valorLancamento ELSE -l.valorLancamento END)` com `WHERE l.statusLancamento = 'Efetivado'` (histórico completo sem recorte de data). |
-| 3 | Histórico dos últimos 6 meses (`$historicoMeses`) | `tbLancamentoFinanceiro` + `tbCategoriaLancamentos` | `DATE_FORMAT(l.dataLancamento, '%Y-%m') AS competencia`, agrupado por competência e natureza para `statusLancamento = 'Efetivado'` desde 5 meses atrás até o fim do mês atual. |
-| 4 | Despesas do mês por categoria (`$gastosPorCategoria`) | `tbLancamentoFinanceiro` + `tbCategoriaLancamentos` | `WHERE c.naturezaCategoria = 'Saída' AND l.statusLancamento = 'Efetivado'` no mês corrente, agrupado por categoria, ordenado por `total DESC`. |
-| 5 | Meta orçamentária do mês atual (`$metaMes`) | `tbMetaOrcamentaria` | `SELECT valorOrcado FROM tbMetaOrcamentaria WHERE ano = :ano AND mes = :mes`. Se retornar `false`, exibe alerta orientativo informando que o orçamento é opcional. |
-| 6 | Últimos 7 lançamentos (`$ultimosLancamentos`) | `tbLancamentoFinanceiro` + `tbCategoriaLancamentos` | `ORDER BY l.dataLancamento DESC, l.idLancamento DESC LIMIT 7` para a tabela de atividade recente. |
+| 1 | Resumo da competência (`$resumoMes`) | `tbLancamentoFinanceiro` + `tbCategoriaLancamentos` | `GROUP BY c.naturezaCategoria, l.statusLancamento` filtrando `l.dataLancamento >= :inicio AND l.dataLancamento < :fim`. Preenche entradas e saídas efetivadas/pendentes do mês escolhido. |
+| 2 | Saldo acumulado efetivado (`$saldoAcumulado`) | `tbLancamentoFinanceiro` + `tbCategoriaLancamentos` | `SUM(CASE WHEN c.naturezaCategoria = 'Entrada' THEN l.valorLancamento ELSE -l.valorLancamento END)` com `statusLancamento = 'Efetivado'` (total no mês atual ou `l.dataLancamento < :fim` ao consultar meses anteriores/futuros). |
+| 3 | Histórico de 6 meses (`$historico`) | `tbLancamentoFinanceiro` + `tbCategoriaLancamentos` | `DATE_FORMAT(l.dataLancamento, '%Y-%m') AS competencia`, agrupado por competência e natureza para `statusLancamento = 'Efetivado'` nos 6 meses encerrados na competência selecionada. |
+| 4 | Despesas da competência por categoria (`$categorias`) | `tbLancamentoFinanceiro` + `tbCategoriaLancamentos` | `WHERE c.naturezaCategoria = 'Saída' AND l.statusLancamento = 'Efetivado'` no mês selecionado, agrupado por categoria, ordenado por `total DESC`. |
+| 5 | Meta orçamentária da competência (`$metaMensal`) | `tbMetaOrcamentaria` | `SELECT valorOrcado FROM tbMetaOrcamentaria WHERE ano = :ano AND mes = :mes`. Se retornar `false`, exibe alerta orientativo informando que o orçamento é opcional. |
+| 6 | Últimos 7 lançamentos (`$lancamentosRecentes`) | `tbLancamentoFinanceiro` + `tbCategoriaLancamentos` | `ORDER BY l.dataLancamento DESC, l.idLancamento DESC LIMIT 7` (geral no mês atual ou filtrado pela competência ao consultar outro mês). |
 
 ## 4.2 Gráfico Donut em CSS Puro (`conic-gradient`) e Meta Mensal
 
@@ -334,6 +335,12 @@ Quando `ctype_digit($busca)` é verdadeiro, a consulta adiciona uma cláusula `O
    - Um lançamento é elegível a recibo quando atende simultaneamente às 3 condições: `naturezaCategoria === 'Entrada'`, `statusLancamento === 'Efetivado'` e `idDoadorContribuinte !== null`.
    - No `INSERT`: se for elegível, em vez de voltar para a listagem, o servidor redireciona diretamente para `recibo-doacao.php?id=<lastInsertId>` (preservando `tabToken`).
    - No `UPDATE`: se o lançamento **passou a ser elegível** (ex.: mudou de `Pendente` para `Efetivado`, ou teve um doador vinculado, ou mudou a natureza para `Entrada`), redireciona automaticamente para `recibo-doacao.php?id=<id>`. Na tabela de pesquisa, todo lançamento elegível também exibe um botão permanente para reemitir o recibo.
+4. **Anexo Privado de Comprovante / Nota Fiscal (`auth/lancamento-comprovantes.php` e `auth/lancamento-comprovante.php`):**
+   - O formulário usa `enctype="multipart/form-data"` e aceita upload opcional em `$_FILES['comprovante']` (PDF, JPEG, PNG ou WebP até 10 MB), validando MIME real via `finfo` e dimensões via `getimagesize` antes de gravar em `uploads/comprovantes-financeiros/` (com `.htaccess` contendo `Require all denied`).
+   - Em caso de substituição, marcação de `removerComprovante=1`, falha de banco ou exclusão do lançamento (`acao=excluir`), o arquivo órfão é removido automaticamente via `appRemoverComprovanteFinanceiro()`.
+   - A visualização ocorre em modal na mesma aba (`#modalVisualizarComprovante` via `<iframe>` ou `<img>`, sem `target="_blank"`) consumindo `auth/lancamento-comprovante.php?id=<id>&tabToken=<token>` (ou `&download=1` para download).
+5. **Baixa Rápida em 1 Clique (`POST acao=efetivar`):**
+   - Disponível nas linhas `Pendente` da listagem de pesquisa: valida CSRF e `idLancamento`, executa `UPDATE tbLancamentoFinanceiro SET statusLancamento = 'Efetivado', idUsuarioAlteracao = :idUsuario WHERE idLancamento = :id`, registra auditoria explícita via `appRegistrarAuditoria('financeiro', 'editar', ...)` e redireciona com `?resultado=efetivado`.
 
 ### Script Inline dos Comboboxes (`[data-reference-search]`)
 
@@ -358,7 +365,7 @@ Endpoint GET dedicado (`recibo-doacao.php?id=<idLancamento>`) protegido por `app
    - `$montarEndereco(array $data, string $prefix, callable $formatarCep)` — monta endereço completo separado por ` · ` reutilizando o mesmo código para os prefixos `'doador'` e `'instituicao'`.
 4. **Numeração e Renderização Dompdf:**
    - Gera o identificador único `$numeroRecibo = 'REC-' . $data->format('Y') . '-' . str_pad((string) $id, 6, '0', STR_PAD_LEFT)` e a data por extenso (`$dataPorExtenso`).
-   - Instancia `\Dompdf\Dompdf` com `defaultFont = 'DejaVu Sans'` e `isRemoteEnabled = false` (segurança contra SSRF), renderiza em A4 retrato e faz stream com `Attachment => true` como `recibo-doacao-<id>.pdf`.
+   - Instancia `\Dompdf\Dompdf` com `defaultFont = 'DejaVu Sans'` e `isRemoteEnabled = false` (segurança contra SSRF), registra auditoria explícita via `appRegistrarAuditoria('financeiro', 'exportar', ...)`, renderiza em A4 retrato e faz stream com `Attachment => true` como `recibo-doacao-<id>.pdf`.
 
 ## 6.3 Metas Orçamentárias (`metas-orcamentarias.php`)
 
